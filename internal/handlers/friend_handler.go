@@ -6,7 +6,6 @@ import (
 
 	"github.com/astra-go/astra/contract"
 
-	"github.com/astra-go/game-backend/internal/models"
 	"github.com/astra-go/game-backend/internal/services"
 )
 

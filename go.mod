@@ -3,12 +3,12 @@ module github.com/astra-go/game-backend
 go 1.25.1
 
 // 使用本地开发的 astra 框架
-replace github.com/astra-go/astra => /Users/huangxiaolin/data/project/gotest/astra
+replace github.com/astra-go/astra => ../astra
 
 // 显式指定 astra 子模块路径
-replace github.com/astra-go/astra/testutil => /Users/huangxiaolin/data/project/gotest/astra/testutil
+replace github.com/astra-go/astra/testutil => ../astra/testutil
 
-replace github.com/astra-go/astra/cache => /Users/huangxiaolin/data/project/gotest/astra/cache
+replace github.com/astra-go/astra/cache => ../astra/cache
 
 require (
 	github.com/alicebob/miniredis/v2 v2.38.0
