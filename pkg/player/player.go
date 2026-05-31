@@ -22,15 +22,23 @@ type PlayerComponent struct {
 	redis          *redis.Client
 	logger         *zap.Logger
 	sessionManager *SessionManager
+	friendComponent interface {
+		NotifyFriendsOnline(playerID string)
+		NotifyFriendsOffline(playerID string)
+	}
 }
 
 // NewPlayerComponent 创建玩家组件
-func NewPlayerComponent(db *gorm.DB, redis *redis.Client, logger *zap.Logger) *PlayerComponent {
+func NewPlayerComponent(db *gorm.DB, redis *redis.Client, logger *zap.Logger, friendComponent interface {
+	NotifyFriendsOnline(playerID string)
+	NotifyFriendsOffline(playerID string)
+}) *PlayerComponent {
 	return &PlayerComponent{
-		db:             db,
-		redis:          redis,
-		logger:         logger,
-		sessionManager: NewSessionManager(redis, logger),
+		db:              db,
+		redis:           redis,
+		logger:          logger,
+		sessionManager:  NewSessionManager(redis, logger),
+		friendComponent: friendComponent,
 	}
 }
 
@@ -186,6 +194,11 @@ func (p *PlayerComponent) Login(req *LoginRequest) (*LoginResponse, error) {
 	// 设置在线状态（1小时过期）
 	p.redis.Set(ctx, fmt.Sprintf("online:%s", player.ID), "1", 1*time.Hour)
 
+	// 通知好友上线
+	if p.friendComponent != nil {
+		p.friendComponent.NotifyFriendsOnline(player.ID)
+	}
+
 	p.logger.Info("玩家登录成功",
 		zap.String("player_id", player.ID),
 		zap.String("username", player.Username),
@@ -215,6 +228,11 @@ func (p *PlayerComponent) Logout(playerID string, deviceType DeviceType) error {
 	if len(sessions) == 0 {
 		// 没有其他会话，设置离线
 		p.redis.Del(ctx, fmt.Sprintf("online:%s", playerID))
+
+		// 通知好友下线
+		if p.friendComponent != nil {
+			p.friendComponent.NotifyFriendsOffline(playerID)
+		}
 	}
 
 	p.logger.Info("玩家登出",

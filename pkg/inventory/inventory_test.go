@@ -205,7 +205,7 @@ func TestUseItem(t *testing.T) {
 	})
 	comp.AddItem("p1", "potion_hp", 5)
 
-	err := comp.UseItem("p1", 1)
+	_, err := comp.UseItem("p1", 1)
 	assert.NoError(t, err)
 
 	slots, _ := comp.GetInventory("p1")
@@ -221,7 +221,7 @@ func TestUseItem_LastOne(t *testing.T) {
 	})
 	comp.AddItem("p1", "potion_hp", 1)
 
-	err := comp.UseItem("p1", 1)
+	_, err := comp.UseItem("p1", 1)
 	assert.NoError(t, err)
 
 	slots, _ := comp.GetInventory("p1")
@@ -236,9 +236,9 @@ func TestUseItem_NotConsumable(t *testing.T) {
 	})
 	comp.AddItem("p1", "sword1", 1)
 
-	err := comp.UseItem("p1", 1)
+	_, err := comp.UseItem("p1", 1)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "只能使用消耗品")
+	assert.Contains(t, err.Error(), "该物品不可使用")
 }
 
 func TestSwapSlots(t *testing.T) {

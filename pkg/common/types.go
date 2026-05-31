@@ -204,6 +204,40 @@ type MatchHistory struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// ========== 好友系统 ==========
+
+// Friend 好友关系（双向存储）
+type Friend struct {
+	ID        int64     `json:"id" gorm:"primaryKey"`
+	PlayerID  string    `json:"player_id" gorm:"index;size:64"`
+	FriendID  string    `json:"friend_id" gorm:"index;size:64"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// FriendRequest 好友请求
+type FriendRequest struct {
+	ID        string    `json:"id" gorm:"primaryKey;size:64"`
+	PlayerID  string    `json:"player_id" gorm:"index;size:64"`
+	TargetID  string    `json:"target_id" gorm:"index;size:64"`
+	Status    string    `json:"status" gorm:"type:enum('pending','accepted','rejected');default:'pending'"`
+	Message   string    `json:"message" gorm:"size:256"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// FriendInfo 好友信息（API响应）
+type FriendInfo struct {
+	PlayerID    string    `json:"player_id"`
+	Username    string    `json:"username"`
+	Nickname    string    `json:"nickname"`
+	Avatar      string    `json:"avatar"`
+	Level       int32     `json:"level"`
+	Online      bool      `json:"online"`
+	LastLoginAt time.Time `json:"last_login_at"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 // ========== 游戏快照 ==========
 
 // GameSnapshot 游戏状态快照（用于模式切换）

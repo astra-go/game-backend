@@ -17,11 +17,13 @@ require (
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/gorilla/websocket v1.5.3
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/nacos-group/nacos-sdk-go/v2 v2.2.5
 	github.com/nats-io/nats.go v1.33.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.20.0
 	github.com/stretchr/testify v1.11.1
+	github.com/willf/bloom v2.0.3+incompatible
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.52.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -74,8 +76,10 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.68.0 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
+	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
+	github.com/willf/bitset v1.1.11 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect

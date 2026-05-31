@@ -9,6 +9,7 @@ import (
 
 	"github.com/astra-go/game-backend/pkg/api"
 	"github.com/astra-go/game-backend/pkg/config"
+	"github.com/astra-go/game-backend/pkg/friend"
 	"github.com/astra-go/game-backend/pkg/middleware"
 	"github.com/astra-go/game-backend/pkg/player"
 	"github.com/astra-go/astra"
@@ -47,8 +48,16 @@ func main() {
 		MinIdleConns: cfg.Redis.MinIdleConns,
 	})
 
+	// 好友组件（暂时传nil给NATS，后续可扩展）
+	friendComp := friend.NewFriendComponent(db, redisClient, nil, logger)
+	err = friendComp.Init()
+	if err != nil {
+		slog.Error("好友组件初始化失败", "error", err)
+		os.Exit(1)
+	}
+
 	// 玩家组件
-	playerComp := player.NewPlayerComponent(db, redisClient, logger)
+	playerComp := player.NewPlayerComponent(db, redisClient, logger, friendComp)
 	err = playerComp.Init()
 	if err != nil {
 		slog.Error("玩家组件初始化失败", "error", err)

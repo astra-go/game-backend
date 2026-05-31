@@ -21,6 +21,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// mockFriendComponent 用于测试的好友组件 mock
+type mockFriendComponent struct{}
+
+func (m *mockFriendComponent) NotifyFriendsOnline(playerID string)  {}
+func (m *mockFriendComponent) NotifyFriendsOffline(playerID string) {}
+
 // testEnv 测试环境，包含所有依赖
 type testEnv struct {
 	app        *astra.App
@@ -58,7 +64,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	})
 
 	// 创建PlayerComponent
-	pc := player.NewPlayerComponent(db, redisClient, logger)
+	pc := player.NewPlayerComponent(db, redisClient, logger, &mockFriendComponent{})
 	err = pc.Init()
 	require.NoError(t, err)
 
@@ -584,7 +590,7 @@ func TestDeleteRedisKeys(t *testing.T) {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: mr.Addr(),
 	})
-	pc := player.NewPlayerComponent(nil, redisClient, logger)
+	pc := player.NewPlayerComponent(nil, redisClient, logger, &mockFriendComponent{})
 
 	// 设置一些键
 	ctx := context.Background()

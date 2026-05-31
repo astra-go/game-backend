@@ -7,6 +7,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// mockFriendNotifier 用于测试的好友通知接口 mock
+type mockFriendNotifier struct{}
+
+func (m *mockFriendNotifier) NotifyFriendsOnline(playerID string)  {}
+func (m *mockFriendNotifier) NotifyFriendsOffline(playerID string) {}
+
 // Since PlayerComponent depends on gorm.DB and redis.Client which require external services,
 // we test the MMR calculation logic directly via the common package functions,
 // and test the streak calculation and helper logic that we can access.
@@ -152,7 +158,7 @@ func TestELOCalculationIntegration(t *testing.T) {
 
 func TestNewPlayerComponent(t *testing.T) {
 	// Test constructor with nil dependencies (component should still be created)
-	pc := NewPlayerComponent(nil, nil, nil)
+	pc := NewPlayerComponent(nil, nil, nil, &mockFriendNotifier{})
 	assert.NotNil(t, pc)
 }
 
