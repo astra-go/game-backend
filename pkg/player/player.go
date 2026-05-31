@@ -419,3 +419,14 @@ func (p *PlayerComponent) GetLeaderboard(limit int) ([]common.Player, error) {
 func generatePlayerID() string {
 	return fmt.Sprintf("player_%d_%d", time.Now().UnixNano(), rand.Int63())
 }
+
+// DeleteRedisKeys 删除玩家相关的Redis键
+func (p *PlayerComponent) DeleteRedisKeys(ctx context.Context, playerID string) error {
+	// 删除JWT token相关键
+	p.redis.Del(ctx, fmt.Sprintf("jwt_token:%s", playerID))
+	// 删除在线状态键
+	p.redis.Del(ctx, fmt.Sprintf("online:%s", playerID))
+	// 删除MMR缓存键
+	p.redis.Del(ctx, fmt.Sprintf("mmr:%s", playerID))
+	return nil
+}
