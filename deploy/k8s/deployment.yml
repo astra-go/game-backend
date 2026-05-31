@@ -1,0 +1,401 @@
+# ============================================
+# Astra Game Backend - Kubernetes 部署
+# ============================================
+
+# ============================================
+# Namespace
+# ============================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: astra-game
+  labels:
+    name: astra-game
+
+---
+# ============================================
+# ConfigMap - 配置文件
+# ============================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: astra-game-config
+  namespace: astra-game
+data:
+  config.yaml: |
+    http:
+      gateway_addr: ":8080"
+      room_addr: ":8081"
+      match_addr: ":8082"
+      player_addr: ":8083"
+    redis:
+      addr: "redis:6379"
+      password: ""
+      db: 0
+    mysql:
+      host: "mysql"
+      port: 3306
+      user: "root"
+      password: "password"
+      database: "astra_game"
+    game:
+      frame_sync_tick_ms: 16
+      state_sync_hz: 20
+
+---
+# ============================================
+# Gateway 服务
+# ============================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: astra-game
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      containers:
+      - name: gateway
+        image: astra-game/gateway:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: REDIS_ADDR
+          value: "redis:6379"
+        - name: MYSQL_DSN
+          value: "root:password@tcp(mysql:3306)/astra_game"
+        resources:
+          limits:
+            cpu: "1"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "128Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: astra-game
+spec:
+  selector:
+    app: gateway
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: ClusterIP
+
+---
+# ============================================
+# Room 服务
+# ============================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: room
+  namespace: astra-game
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: room
+  template:
+    metadata:
+      labels:
+        app: room
+    spec:
+      containers:
+      - name: room
+        image: astra-game/room:latest
+        ports:
+        - containerPort: 8081
+        env:
+        - name: REDIS_ADDR
+          value: "redis:6379"
+        resources:
+          limits:
+            cpu: "2"
+            memory: "1Gi"
+          requests:
+            cpu: "500m"
+            memory: "256Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 10
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: room
+  namespace: astra-game
+spec:
+  selector:
+    app: room
+  ports:
+  - port: 8081
+    targetPort: 8081
+  type: ClusterIP
+
+---
+# ============================================
+# Match 服务
+# ============================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: match
+  namespace: astra-game
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: match
+  template:
+    metadata:
+      labels:
+        app: match
+    spec:
+      containers:
+      - name: match
+        image: astra-game/match:latest
+        ports:
+        - containerPort: 8082
+        env:
+        - name: REDIS_ADDR
+          value: "redis:6379"
+        resources:
+          limits:
+            cpu: "1"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "128Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8082
+          initialDelaySeconds: 10
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: match
+  namespace: astra-game
+spec:
+  selector:
+    app: match
+  ports:
+  - port: 8082
+    targetPort: 8082
+  type: ClusterIP
+
+---
+# ============================================
+# Player 服务
+# ============================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: player
+  namespace: astra-game
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: player
+  template:
+    metadata:
+      labels:
+        app: player
+    spec:
+      containers:
+      - name: player
+        image: astra-game/player:latest
+        ports:
+        - containerPort: 8083
+        env:
+        - name: REDIS_ADDR
+          value: "redis:6379"
+        - name: DB_DSN
+          value: "root:password@tcp(mysql:3306)/astra_game"
+        resources:
+          limits:
+            cpu: "1"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "128Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8083
+          initialDelaySeconds: 10
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: player
+  namespace: astra-game
+spec:
+  selector:
+    app: player
+  ports:
+  - port: 8083
+    targetPort: 8083
+  type: ClusterIP
+
+---
+# ============================================
+# Redis
+# ============================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: astra-game
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.2-alpine
+        ports:
+        - containerPort: 6379
+        command: ["redis-server", "--appendonly", "yes"]
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+      volumes:
+      - name: redis-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: astra-game
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+  type: ClusterIP
+
+---
+# ============================================
+# MySQL
+# ============================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: astra-game
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.0
+        ports:
+        - containerPort: 3306
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "password"
+        - name: MYSQL_DATABASE
+          value: "astra_game"
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+        resources:
+          limits:
+            cpu: "2"
+            memory: "2Gi"
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+      volumes:
+      - name: mysql-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: astra-game
+spec:
+  selector:
+    app: mysql
+  ports:
+  - port: 3306
+    targetPort: 3306
+  type: ClusterIP
+
+---
+# ============================================
+# Ingress
+# ============================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: astra-game-ingress
+  namespace: astra-game
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: game.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: gateway
+            port:
+              number: 8080

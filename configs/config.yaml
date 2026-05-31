@@ -1,0 +1,84 @@
+# ============================================
+# Astra Game Backend - 配置文件
+# ============================================
+
+# HTTP服务配置
+http:
+  gateway_addr: ":8080"
+  room_addr: ":8081"
+  match_addr: ":8082"
+  player_addr: ":8083"
+
+# Redis配置
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+  pool_size: 10
+  min_idle_conns: 5
+
+# MySQL配置
+mysql:
+  host: "127.0.0.1"
+  port: 3306
+  user: "root"
+  password: "password"
+  database: "astra_game"
+  charset: "utf8mb4"
+  parse_time: true
+  max_idle_conns: 10
+  max_open_conns: 100
+
+# NATS配置
+nats:
+  url: "nats://localhost:4222"
+  max_reconnect: 10
+  reconnect_wait: 2
+
+# 游戏配置
+game:
+  # 帧同步
+  frame_sync_tick_ms: 16  # 60fps
+  frame_history_max: 600    # 保存最近600帧
+  
+  # 状态同步
+  state_sync_hz: 20        # 20Hz同步频率
+  full_sync_interval: 300   # 每300帧全量同步
+  
+  # 匹配
+  match:
+    mmr_delta_initial: 100
+    mmr_delta_max: 800
+    mmr_delta_growth: 100
+    match_timeout: 30       # 30秒匹配超时
+    queue_ttl: 600         # 10分钟队列过期
+  
+  # 房间
+  room:
+    max_players_per_room: 10
+    max_rooms_per_node: 1000
+    room_ttl: 3600         # 1小时房间过期
+    reconnect_window: 300   # 5分钟重连窗口
+  
+  # 心跳
+  heartbeat:
+    interval: 30           # 30秒心跳间隔
+    timeout: 90             # 90秒心跳超时
+
+# 监控配置
+metrics:
+  enabled: true
+  port: 9090
+  path: "/metrics"
+
+# 日志配置
+log:
+  level: "info"
+  format: "json"
+  output: "stdout"
+
+# 限流配置
+ratelimit:
+  enabled: true
+  requests_per_second: 100
+  burst: 200

@@ -1,0 +1,19 @@
+# ============================================
+# Nacos 连接配置
+# ============================================
+
+# Nacos 服务器地址
+server_addr: "localhost"
+
+# 命名空间ID（默认为空，表示public）
+namespace: ""
+
+# 配置分组
+group: "DEFAULT_GROUP"
+
+# 配置的DataID
+data_id: "astra-game.yaml"
+
+# Nacos 认证信息（如果开启了认证）
+username: "nacos"
+password: "nacos"

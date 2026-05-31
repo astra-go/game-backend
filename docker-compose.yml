@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # Redis - 缓存和会话存储
+  redis:
+    image: redis:7.2-alpine
+    container_name: astra-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # MySQL - 玩家数据持久化
+  mysql:
+    image: mysql:8.0
+    container_name: astra-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: astra_game
+      MYSQL_USER: astra
+      MYSQL_PASSWORD: astra123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # NATS - 消息总线
+  nats:
+    image: nats:2.10-alpine
+    container_name: astra-nats
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+      - "6222:6222"
+    command: "-m 8222"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Prometheus - 监控
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: astra-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+
+  # Grafana - 可视化
+  grafana:
+    image: grafana/grafana:latest
+    container_name: astra-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./configs/grafana/dashboards:/etc/grafana/provisioning/dashboards
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  mysql_data:
+  prometheus_data:
+  grafana_data:

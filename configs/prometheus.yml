@@ -1,0 +1,59 @@
+# ============================================
+# Prometheus 配置
+# ============================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  # Gateway服务
+  - job_name: 'gateway'
+    static_configs:
+      - targets: ['gateway:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # Room服务
+  - job_name: 'room'
+    static_configs:
+      - targets: ['room:8081']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # Match服务
+  - job_name: 'match'
+    static_configs:
+      - targets: ['match:8082']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # Player服务
+  - job_name: 'player'
+    static_configs:
+      - targets: ['player:8083']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:9121']
+
+  # MySQL
+  - job_name: 'mysql'
+    static_configs:
+      - targets: ['mysql:9104']
+
+  # NATS
+  - job_name: 'nats'
+    static_configs:
+      - targets: ['nats:8222']
+
+  # 自身
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
