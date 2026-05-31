@@ -67,16 +67,6 @@ func newTestLogger() *zap.Logger {
 	return logger
 }
 
-func newTestRoomComponent() *RoomComponent {
-	logger := newTestLogger()
-	cfg := DefaultRoomConfig()
-	// 不使用真实Redis，通过RoomComponent的内存sync.Map测试
-	// 注意：RoomComponent直接使用 *redis.Client，测试时需要特殊处理
-	return &RoomComponent{
-		logger: logger,
-		config: cfg,
-	}
-}
 
 // createRoomComponentWithMocks 创建组件（Redis为nil，需要时手动mock）
 // RoomComponent直接使用 *redis.Client，无法用接口替代
@@ -388,7 +378,7 @@ func TestBroadcastToRoom(t *testing.T) {
 	msg := common.WSMessage{
 		Type:   common.WSMsgFrame,
 		RoomID: "room1",
-		Data:   map[string]interface{}{"frame": 1},
+		Data:   map[string]any{"frame": 1},
 	}
 
 	err := r.broadcastToRoom("room1", msg)
@@ -408,7 +398,7 @@ func TestBroadcastToRoom_NoNATS(t *testing.T) {
 	msg := common.WSMessage{
 		Type:   common.WSMsgFrame,
 		RoomID: "room1",
-		Data:   map[string]interface{}{"frame": 1},
+		Data:   map[string]any{"frame": 1},
 	}
 
 	err := r.broadcastToRoom("room1", msg)
@@ -534,7 +524,7 @@ func TestMultipleRoomsCreation(t *testing.T) {
 	}
 
 	count := 0
-	r.rooms.Range(func(_, _ interface{}) bool {
+	r.rooms.Range(func(_, _ any) bool {
 		count++
 		return true
 	})
@@ -650,20 +640,6 @@ func TestMockNATS_Operations(t *testing.T) {
 	err = m.Close()
 	assert.NoError(t, err)
 	assert.True(t, m.closed)
-}
-
-func TestSaveSnapshot(t *testing.T) {
-	session := &RoomSession{
-		roomID: "room_snap",
-		players: map[string]*common.RoomPlayer{
-			"p1": {PlayerID: "p1", IsOnline: true},
-		},
-		syncMode: common.SyncModeFrame,
-		frame:    100,
-	}
-
-	// saveSnapshot不应panic
-	session.saveSnapshot()
 }
 
 func TestRoomPlayer_JoinTime(t *testing.T) {

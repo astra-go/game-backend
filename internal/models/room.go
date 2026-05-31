@@ -14,10 +14,10 @@ const (
 
 // Room represents a chat room
 type Room struct {
-	ID          uint64    `json:"id" gorm:"primaryKey;autoIncrement"`
+	ID          string    `json:"id" gorm:"primaryKey;type:varchar(64)"`
 	Name        string    `json:"name" gorm:"type:varchar(50);not null"`
 	Description string    `json:"description" gorm:"type:text"`
-	OwnerID     uint64    `json:"owner_id" gorm:"index;not null"`
+	OwnerID     string    `json:"owner_id" gorm:"type:varchar(64);index;not null"`
 	MaxMembers  int       `json:"max_members" gorm:"default:100"`
 	IsPublic    bool      `json:"is_public" gorm:"default:true"`
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
@@ -31,9 +31,9 @@ func (Room) TableName() string {
 
 // RoomMember represents a member of a room
 type RoomMember struct {
-	ID       uint64    `json:"id" gorm:"primaryKey;autoIncrement"`
-	RoomID   uint64    `json:"room_id" gorm:"index:idx_room_player;not null"`
-	PlayerID uint64    `json:"player_id" gorm:"index:idx_room_player;not null"`
+	ID       string    `json:"id" gorm:"primaryKey;type:varchar(64)"`
+	RoomID   string    `json:"room_id" gorm:"type:varchar(64);index:idx_room_player;not null"`
+	PlayerID string    `json:"player_id" gorm:"type:varchar(64);index:idx_room_player;not null"`
 	Role     RoomRole  `json:"role" gorm:"type:varchar(20);not null;default:'member'"`
 	JoinedAt time.Time `json:"joined_at" gorm:"autoCreateTime"`
 }

@@ -2,6 +2,7 @@ package match
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -197,7 +198,14 @@ func TestDequeue(t *testing.T) {
 					Score:  float64(1500),
 					Member: "player1",
 				})
-				mc.redis.HSet(ctx, "match:processing", "player1", "1v1")
+				matchInfo := PlayerMatchInfo{
+					PlayerID:  "player1",
+					MMR:       1500,
+					EnqueueAt: time.Now().Unix(),
+					Mode:      "1v1",
+				}
+				infoData, _ := json.Marshal(matchInfo)
+				mc.redis.HSet(ctx, "match:processing", "player1", infoData)
 				return "1v1"
 			},
 			wantError: false,
@@ -364,30 +372,37 @@ func TestGetRequiredPlayers(t *testing.T) {
 func TestSelectClosestPlayers(t *testing.T) {
 	mc, mr := setupTestMatchComponent(t)
 	defer mr.Close()
-	
+
 	tests := []struct {
 		name         string
-		players      []string
+		players      []redis.Z
 		targetMMR    int32
 		n            int
 		expectCount  int
 	}{
 		{
-			name:        "选择MMR最接近的2个玩家",
-			players:     []string{"p1", "p2", "p3", "p4"},
+			name: "选择MMR最接近的2个玩家",
+			players: []redis.Z{
+				{Score: 1500, Member: "p1"},
+				{Score: 1550, Member: "p2"},
+				{Score: 1600, Member: "p3"},
+				{Score: 1450, Member: "p4"},
+			},
 			targetMMR:   1500,
 			n:           2,
 			expectCount: 2,
 		},
 		{
-			name:        "玩家数量不足",
-			players:     []string{"p1"},
+			name: "玩家数量不足",
+			players: []redis.Z{
+				{Score: 1500, Member: "p1"},
+			},
 			targetMMR:   1500,
 			n:           3,
 			expectCount: 1,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			selected := mc.selectClosestPlayers(tt.players, tt.targetMMR, tt.n)
