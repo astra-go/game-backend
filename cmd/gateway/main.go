@@ -51,7 +51,8 @@ func main() {
 	// 创建网关组件
 	gwCfg := gateway.DefaultGatewayConfig()
 	redisAdapter := gateway.NewRedisAdapter(redisClient)
-	gw := gateway.NewGatewayComponent(redisAdapter, natsClient, gwCfg)
+	nodeID := fmt.Sprintf("gateway-%d", time.Now().Unix())
+	gw := gateway.NewGatewayComponent(redisAdapter, natsClient, gwCfg, nodeID)
 	
 	// 注册路由
 	app.GET("/ws", func(c *astra.Ctx) error {

@@ -14,13 +14,13 @@ import (
 
 // 统一响应结构
 type apiResponse struct {
-	Code int         `json:"code"`
-	Data interface{} `json:"data,omitempty"`
-	Msg  string      `json:"msg"`
+	Code int    `json:"code"`
+	Data any    `json:"data,omitempty"`
+	Msg  string `json:"msg"`
 }
 
 // ResponseOK 返回成功响应
-func ResponseOK(c *astra.Ctx, data interface{}) error {
+func ResponseOK(c *astra.Ctx, data any) error {
 	return c.JSON(http.StatusOK, apiResponse{
 		Code: 0,
 		Data: data,
@@ -130,7 +130,7 @@ func (api *PlayerAPI) Login(c *astra.Ctx) error {
 		return ResponseError(c, http.StatusUnauthorized, err.Error())
 	}
 
-	return ResponseOK(c, map[string]interface{}{
+	return ResponseOK(c, map[string]any{
 		"player": p,
 		"token":  token,
 	})

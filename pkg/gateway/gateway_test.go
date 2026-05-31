@@ -271,7 +271,7 @@ func TestNewGatewayComponent(t *testing.T) {
 	nats := newMockNATSClient()
 	cfg := DefaultGatewayConfig()
 
-	g := NewGatewayComponent(redis, nats, cfg)
+	g := NewGatewayComponent(redis, nats, cfg, "test-node-1")
 
 	assert.NotNil(t, g)
 	assert.Equal(t, redis, g.redis)
@@ -321,7 +321,7 @@ func TestGatewayConfig_Custom(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			redis := newMockRedisClient()
 			nats := newMockNATSClient()
-			g := NewGatewayComponent(redis, nats, tt.config)
+			g := NewGatewayComponent(redis, nats, tt.config, "test-node-1")
 			assert.Equal(t, tt.expectInterval, g.config.HeartbeatInterval)
 			assert.Equal(t, tt.expectTimeout, g.config.HeartbeatTimeout)
 			assert.Equal(t, tt.expectMaxMsgSize, g.config.MaxMessageSize)
@@ -360,7 +360,7 @@ func TestHandleWS_MissingTokenOrPlayerID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			redis := newMockRedisClient()
 			nats := newMockNATSClient()
-			g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+			g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 			server := setupTestServer(g)
 			defer server.Close()
 
@@ -401,7 +401,7 @@ func TestHandleWS_InvalidJWT(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			redis := newMockRedisClient()
 			nats := newMockNATSClient()
-			g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+			g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 			server := setupTestServer(g)
 			defer server.Close()
 
@@ -417,7 +417,7 @@ func TestHandleWS_InvalidJWT(t *testing.T) {
 func TestHandleWS_TokenPlayerIDMismatch(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -437,7 +437,7 @@ func TestHandleWS_TokenPlayerIDMismatch(t *testing.T) {
 func TestHandleWS_SuccessfulConnection(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -462,7 +462,7 @@ func TestHandleWS_SuccessfulConnection(t *testing.T) {
 func TestHandleWS_MultipleConnections(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -488,7 +488,7 @@ func TestHandleWS_MultipleConnections(t *testing.T) {
 func TestHandleJoin(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -535,7 +535,7 @@ func TestHandleJoin(t *testing.T) {
 func TestHandleJoin_MissingRoomID(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -561,7 +561,7 @@ func TestHandleJoin_MissingRoomID(t *testing.T) {
 func TestHandleLeave(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -600,7 +600,7 @@ func TestHandleLeave(t *testing.T) {
 func TestHandleHeartbeat(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -630,7 +630,7 @@ func TestHandleHeartbeat(t *testing.T) {
 func TestHandleInput(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -673,7 +673,7 @@ func TestHandleInput(t *testing.T) {
 func TestHandleInput_NotInRoom(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -699,7 +699,7 @@ func TestHandleInput_NotInRoom(t *testing.T) {
 func TestHandleUnknownMessageType(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -721,7 +721,7 @@ func TestHandleUnknownMessageType(t *testing.T) {
 func TestHandleInvalidJSON(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -741,7 +741,7 @@ func TestHandleInvalidJSON(t *testing.T) {
 func TestHandleReconnect(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -763,7 +763,7 @@ func TestHandleReconnect(t *testing.T) {
 func TestHandleReconnect_WithSession(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -823,7 +823,7 @@ func TestValidateReconnectToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			redis := newMockRedisClient()
 			nats := newMockNATSClient()
-			g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+			g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 
 			if tt.redisAvail {
 				redis.Set("reconnect:player1", tt.storedToken, 0)
@@ -845,7 +845,7 @@ func TestValidateReconnectToken(t *testing.T) {
 func TestHandleRoomBroadcast(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -871,7 +871,7 @@ func TestHandleRoomBroadcast(t *testing.T) {
 func TestHandlePlayerLeave_NATS(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -893,7 +893,7 @@ func TestHandlePlayerLeave_NATS(t *testing.T) {
 func TestSendMessage_ChannelFull(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 
 	// 创建一个缓冲区很小的sendCh
 	wsc := &WSConnection{
@@ -915,7 +915,7 @@ func TestSendMessage_ChannelFull(t *testing.T) {
 func TestCloseConnection(t *testing.T) {
 	redis := newMockRedisClient()
 	nats := newMockNATSClient()
-	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig())
+	g := NewGatewayComponent(redis, nats, DefaultGatewayConfig(), "test-node-1")
 	server := setupTestServer(g)
 	defer server.Close()
 
@@ -955,7 +955,7 @@ func TestGenerateConnID(t *testing.T) {
 
 func TestGateway_NilRedisNATS(t *testing.T) {
 	// 确保redis/nats为nil时不panic
-	g := NewGatewayComponent(nil, nil, DefaultGatewayConfig())
+	g := NewGatewayComponent(nil, nil, DefaultGatewayConfig(), "test-node-1")
 
 	// handleJoin不应panic
 	wsc := &WSConnection{

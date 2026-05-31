@@ -240,7 +240,7 @@ type WSMessage struct {
 	Type    string      `json:"type"`
 	RoomID  string      `json:"room_id,omitempty"`
 	Frame   int64       `json:"frame,omitempty"`
-	Data    interface{} `json:"data,omitempty"`
+	Data    any         `json:"data,omitempty"`
 }
 
 // WSMessageType 消息类型
