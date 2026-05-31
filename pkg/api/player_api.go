@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -33,7 +32,7 @@ func ResponseError(c *astra.Ctx, code int, msg string) error {
 	// 根据业务错误码映射HTTP状态码
 	httpCode := code
 	if code >= 1000 {
-		// 自定义业务错误码，统一返回400
+		// 自定义业务错误码,统一返回400
 		httpCode = http.StatusBadRequest
 	}
 	return c.JSON(httpCode, apiResponse{
@@ -67,6 +66,8 @@ func (api *PlayerAPI) RegisterRoutes(app *astra.App) {
 	app.GET("/api/v1/player/profile", api.AuthRequired(), api.GetProfile)
 	app.PUT("/api/v1/player/profile", api.AuthRequired(), api.UpdateProfile)
 	app.POST("/api/v1/player/logout", api.AuthRequired(), api.Logout)
+	app.GET("/api/v1/player/sessions", api.AuthRequired(), api.GetSessions)
+	app.POST("/api/v1/player/kick-device", api.AuthRequired(), api.KickDevice)
 	app.GET("/api/v1/player/:id", api.AuthRequired(), api.GetPlayerByID)
 	app.POST("/api/v1/player/change-password", api.AuthRequired(), api.ChangePassword)
 }
@@ -79,22 +80,14 @@ func (api *PlayerAPI) AuthRequired() astra.HandlerFunc {
 // Register 注册新玩家
 // POST /api/v1/player/register
 func (api *PlayerAPI) Register(c *astra.Ctx) error {
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
+	var req player.RegisterRequest
 
 	if err := c.BindJSON(&req); err != nil {
 		api.logger.Warn("注册请求参数解析失败", zap.Error(err))
 		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
 	}
 
-	// 参数校验
-	if req.Username == "" || req.Password == "" {
-		return ResponseError(c, http.StatusBadRequest, "用户名和密码不能为空")
-	}
-
-	p, err := api.pc.Register(req.Username, req.Password)
+	p, err := api.pc.Register(&req)
 	if err != nil {
 		api.logger.Warn("注册失败", zap.Error(err))
 		return ResponseError(c, http.StatusBadRequest, err.Error())
@@ -110,30 +103,25 @@ func (api *PlayerAPI) Register(c *astra.Ctx) error {
 // Login 登录
 // POST /api/v1/player/login
 func (api *PlayerAPI) Login(c *astra.Ctx) error {
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
+	var req player.LoginRequest
 
 	if err := c.BindJSON(&req); err != nil {
 		api.logger.Warn("登录请求参数解析失败", zap.Error(err))
 		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
 	}
 
-	if req.Username == "" || req.Password == "" {
-		return ResponseError(c, http.StatusBadRequest, "用户名和密码不能为空")
+	// 从请求中获取IP地址
+	if req.IP == "" {
+		req.IP = c.ClientIP()
 	}
 
-	p, token, err := api.pc.Login(req.Username, req.Password)
+	resp, err := api.pc.Login(&req)
 	if err != nil {
 		api.logger.Warn("登录失败", zap.String("username", req.Username), zap.Error(err))
 		return ResponseError(c, http.StatusUnauthorized, err.Error())
 	}
 
-	return ResponseOK(c, map[string]any{
-		"player": p,
-		"token":  token,
-	})
+	return ResponseOK(c, resp)
 }
 
 // GetProfile 获取当前玩家个人信息
@@ -201,9 +189,65 @@ func (api *PlayerAPI) Logout(c *astra.Ctx) error {
 		return ResponseError(c, http.StatusUnauthorized, "未授权")
 	}
 
-	// 删除Redis中的token和在线状态
-	ctx := context.Background()
-	api.pc.DeleteRedisKeys(ctx, pid)
+	var req struct {
+		DeviceType player.DeviceType `json:"device_type" binding:"required"`
+	}
+
+	if err := c.BindJSON(&req); err != nil {
+		api.logger.Warn("登出请求参数解析失败", zap.Error(err))
+		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
+	}
+
+	err := api.pc.Logout(pid, req.DeviceType)
+	if err != nil {
+		api.logger.Error("登出失败", zap.String("player_id", pid), zap.Error(err))
+		return ResponseError(c, http.StatusInternalServerError, "登出失败")
+	}
+
+	return ResponseOK(c, map[string]string{"msg": "ok"})
+}
+
+// GetSessions 获取当前玩家的所有活跃会话
+// GET /api/v1/player/sessions
+func (api *PlayerAPI) GetSessions(c *astra.Ctx) error {
+	playerID, _ := c.Get(middleware.ContextKeyPlayerID)
+	pid, ok := playerID.(string)
+	if !ok || pid == "" {
+		return ResponseError(c, http.StatusUnauthorized, "未授权")
+	}
+
+	sessions, err := api.pc.GetActiveSessions(pid)
+	if err != nil {
+		api.logger.Error("获取会话列表失败", zap.String("player_id", pid), zap.Error(err))
+		return ResponseError(c, http.StatusInternalServerError, "获取会话列表失败")
+	}
+
+	return ResponseOK(c, sessions)
+}
+
+// KickDevice 踢掉指定设备
+// POST /api/v1/player/kick-device
+func (api *PlayerAPI) KickDevice(c *astra.Ctx) error {
+	playerID, _ := c.Get(middleware.ContextKeyPlayerID)
+	pid, ok := playerID.(string)
+	if !ok || pid == "" {
+		return ResponseError(c, http.StatusUnauthorized, "未授权")
+	}
+
+	var req struct {
+		DeviceType player.DeviceType `json:"device_type" binding:"required"`
+	}
+
+	if err := c.BindJSON(&req); err != nil {
+		api.logger.Warn("踢设备请求参数解析失败", zap.Error(err))
+		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
+	}
+
+	err := api.pc.KickDevice(pid, req.DeviceType)
+	if err != nil {
+		api.logger.Error("踢设备失败", zap.String("player_id", pid), zap.Error(err))
+		return ResponseError(c, http.StatusInternalServerError, "踢设备失败")
+	}
 
 	return ResponseOK(c, map[string]string{"msg": "ok"})
 }

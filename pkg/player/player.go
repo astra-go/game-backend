@@ -18,17 +18,19 @@ var ctx = context.Background()
 
 // PlayerComponent 玩家服务组件
 type PlayerComponent struct {
-	db     *gorm.DB
-	redis  *redis.Client
-	logger *zap.Logger
+	db             *gorm.DB
+	redis          *redis.Client
+	logger         *zap.Logger
+	sessionManager *SessionManager
 }
 
 // NewPlayerComponent 创建玩家组件
 func NewPlayerComponent(db *gorm.DB, redis *redis.Client, logger *zap.Logger) *PlayerComponent {
 	return &PlayerComponent{
-		db:     db,
-		redis:  redis,
-		logger: logger,
+		db:             db,
+		redis:          redis,
+		logger:         logger,
+		sessionManager: NewSessionManager(redis, logger),
 	}
 }
 
@@ -45,27 +47,63 @@ func (p *PlayerComponent) Init() error {
 	return nil
 }
 
+// RegisterRequest 注册请求
+type RegisterRequest struct {
+	Username string `json:"username" binding:"required,min=3,max=32"`
+	Password string `json:"password" binding:"required,min=6,max=32"`
+	Nickname string `json:"nickname" binding:"max=64"`
+}
+
+// LoginRequest 登录请求
+type LoginRequest struct {
+	Username   string     `json:"username" binding:"required"`
+	Password   string     `json:"password" binding:"required"`
+	DeviceType DeviceType `json:"device_type" binding:"required"`
+	DeviceID   string     `json:"device_id" binding:"required"`
+	IP         string     `json:"ip"`
+}
+
+// LoginResponse 登录响应
+type LoginResponse struct {
+	Player       *common.Player `json:"player"`
+	Token        string         `json:"token"`
+	ExpiresAt    int64          `json:"expires_at"`
+	KickedDevice string         `json:"kicked_device,omitempty"`
+}
+
 // Register 注册新玩家
-func (p *PlayerComponent) Register(username, password string) (*common.Player, error) {
+func (p *PlayerComponent) Register(req *RegisterRequest) (*common.Player, error) {
 	// 检查用户名是否存在
 	var existing common.Player
-	err := p.db.Where("username = ?", username).First(&existing).Error
+	err := p.db.Where("username = ?", req.Username).First(&existing).Error
 	if err == nil {
 		return nil, errors.New("用户名已存在")
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
 
-	// 加密密码
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	// 密码强度验证
+	if len(req.Password) < 6 {
+		return nil, errors.New("密码长度至少6位")
+	}
+
+	// 加密密码（使用bcrypt，cost=12）
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("密码加密失败: %w", err)
+	}
+
+	// 设置默认昵称
+	nickname := req.Nickname
+	if nickname == "" {
+		nickname = req.Username
 	}
 
 	player := &common.Player{
 		ID:           generatePlayerID(),
-		Username:     username,
+		Username:     req.Username,
 		PasswordHash: string(hash),
+		Nickname:     nickname,
 		Level:        1,
 		Exp:          0,
 		Gold:         1000,
@@ -79,54 +117,127 @@ func (p *PlayerComponent) Register(username, password string) (*common.Player, e
 
 	err = p.db.Create(player).Error
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("创建玩家失败: %w", err)
 	}
 
-	p.logger.Info("玩家注册成功", zap.String("player_id", player.ID))
+	p.logger.Info("玩家注册成功",
+		zap.String("player_id", player.ID),
+		zap.String("username", player.Username),
+	)
 
 	return player, nil
 }
 
 // Login 登录
-func (p *PlayerComponent) Login(username, password string) (*common.Player, string, error) {
+func (p *PlayerComponent) Login(req *LoginRequest) (*LoginResponse, error) {
 	var player common.Player
-	err := p.db.Where("username = ?", username).First(&player).Error
+	err := p.db.Where("username = ?", req.Username).First(&player).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", errors.New("用户不存在")
+			return nil, errors.New("用户不存在")
 		}
-		return nil, "", err
+		return nil, err
 	}
 
 	// 验证密码
-	err = bcrypt.CompareHashAndPassword([]byte(player.PasswordHash), []byte(password))
+	err = bcrypt.CompareHashAndPassword([]byte(player.PasswordHash), []byte(req.Password))
 	if err != nil {
-		return nil, "", errors.New("密码错误")
+		p.logger.Warn("密码验证失败",
+			zap.String("username", req.Username),
+			zap.String("ip", req.IP),
+		)
+		return nil, errors.New("密码错误")
 	}
 
 	// 生成JWT token
 	token, err := common.GenerateToken(player.ID, player.Username)
 	if err != nil {
 		p.logger.Error("生成JWT token失败", zap.Error(err))
-		return nil, "", fmt.Errorf("生成token失败: %w", err)
+		return nil, fmt.Errorf("生成token失败: %w", err)
 	}
 
-	// 将token存储到Redis（用于注销功能）
-	err = p.redis.Set(ctx, fmt.Sprintf("jwt_token:%s", player.ID), token, 24*time.Hour).Err()
+	// 检查是否有同设备类型的旧会话，如果有则踢掉
+	var kickedDevice string
+	sessions, _ := p.sessionManager.GetActiveSessions(ctx, player.ID)
+	for _, session := range sessions {
+		if session.DeviceType == req.DeviceType {
+			kickedDevice = session.DeviceID
+			p.sessionManager.KickSession(ctx, player.ID, req.DeviceType)
+			p.logger.Info("踢掉旧会话",
+				zap.String("player_id", player.ID),
+				zap.String("device_type", string(req.DeviceType)),
+				zap.String("old_device_id", session.DeviceID),
+			)
+			break
+		}
+	}
+
+	// 创建新会话
+	err = p.sessionManager.CreateSession(ctx, player.ID, token, req.DeviceType, req.DeviceID, req.IP)
 	if err != nil {
-		p.logger.Warn("保存JWT token到Redis失败", zap.Error(err))
+		p.logger.Error("创建会话失败", zap.Error(err))
+		return nil, fmt.Errorf("创建会话失败: %w", err)
 	}
 
 	// 更新最后登录时间
 	player.LastLoginAt = time.Now()
 	p.db.Save(&player)
 
-	// 设置在线状态
+	// 设置在线状态（1小时过期）
 	p.redis.Set(ctx, fmt.Sprintf("online:%s", player.ID), "1", 1*time.Hour)
 
-	p.logger.Info("玩家登录成功", zap.String("player_id", player.ID))
+	p.logger.Info("玩家登录成功",
+		zap.String("player_id", player.ID),
+		zap.String("username", player.Username),
+		zap.String("device_type", string(req.DeviceType)),
+		zap.String("device_id", req.DeviceID),
+		zap.String("ip", req.IP),
+	)
 
-	return &player, token, nil
+	return &LoginResponse{
+		Player:       &player,
+		Token:        token,
+		ExpiresAt:    time.Now().Add(24 * time.Hour).Unix(),
+		KickedDevice: kickedDevice,
+	}, nil
+}
+
+// Logout 登出
+func (p *PlayerComponent) Logout(playerID string, deviceType DeviceType) error {
+	// 删除会话
+	err := p.sessionManager.KickSession(ctx, playerID, deviceType)
+	if err != nil {
+		return err
+	}
+
+	// 检查是否还有其他活跃会话
+	sessions, _ := p.sessionManager.GetActiveSessions(ctx, playerID)
+	if len(sessions) == 0 {
+		// 没有其他会话，设置离线
+		p.redis.Del(ctx, fmt.Sprintf("online:%s", playerID))
+	}
+
+	p.logger.Info("玩家登出",
+		zap.String("player_id", playerID),
+		zap.String("device_type", string(deviceType)),
+	)
+
+	return nil
+}
+
+// ValidateSession 验证会话
+func (p *PlayerComponent) ValidateSession(playerID string, token string, deviceType DeviceType) (bool, error) {
+	return p.sessionManager.ValidateSession(ctx, playerID, token, deviceType)
+}
+
+// GetActiveSessions 获取活跃会话列表
+func (p *PlayerComponent) GetActiveSessions(playerID string) ([]SessionInfo, error) {
+	return p.sessionManager.GetActiveSessions(ctx, playerID)
+}
+
+// KickDevice 踢掉指定设备
+func (p *PlayerComponent) KickDevice(playerID string, deviceType DeviceType) error {
+	return p.sessionManager.KickSession(ctx, playerID, deviceType)
 }
 
 // GetByID 根据ID获取玩家
@@ -252,20 +363,31 @@ func (p *PlayerComponent) ChangePassword(playerID, oldPassword, newPassword stri
 		return errors.New("旧密码错误")
 	}
 
+	// 密码强度验证
+	if len(newPassword) < 6 {
+		return errors.New("新密码长度至少6位")
+	}
+
 	// 加密新密码
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
+	if err != nil {
+		return fmt.Errorf("密码加密失败: %w", err)
+	}
+
+	player.PasswordHash = string(hash)
+	err = p.db.Save(&player).Error
 	if err != nil {
 		return err
 	}
 
-	player.PasswordHash = string(hash)
-	return p.db.Save(&player).Error
-}
+	// 修改密码后踢掉所有会话，要求重新登录
+	p.sessionManager.KickAllSessions(ctx, playerID)
 
-// DeleteRedisKeys 删除Redis中的token和在线状态（登出时使用）
-func (p *PlayerComponent) DeleteRedisKeys(ctx context.Context, playerID string) {
-	p.redis.Del(ctx, fmt.Sprintf("jwt_token:%s", playerID))
-	p.redis.Del(ctx, fmt.Sprintf("online:%s", playerID))
+	p.logger.Info("修改密码成功",
+		zap.String("player_id", playerID),
+	)
+
+	return nil
 }
 
 // IsOnline 检查玩家是否在线
