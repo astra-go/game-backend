@@ -46,6 +46,9 @@ var (
 // GatewayComponent 游戏网关组件
 type GatewayComponent struct {
 	app         *astra.App
+	hashRing    *ConsistentHash
+	router      *MessageRouter
+	nodeID      string
 	upgrader    websocket.Upgrader
 	rooms       sync.Map // roomID -> *RoomSession
 	connections sync.Map // connID -> *WSConnection
@@ -95,11 +98,12 @@ type NATSClient interface {
 }
 
 // NewGatewayComponent 创建网关组件
-func NewGatewayComponent(redis RedisClient, nats NATSClient, cfg GatewayConfig) *GatewayComponent {
+func NewGatewayComponent(redis RedisClient, nats NATSClient, cfg GatewayConfig, nodeID string) *GatewayComponent {
 	g := &GatewayComponent{
 		redis:  redis,
 		nats:   nats,
 		config: cfg,
+		nodeID: nodeID,
 		app:    astra.New(),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  cfg.ReadBufferSize,
@@ -109,20 +113,34 @@ func NewGatewayComponent(redis RedisClient, nats NATSClient, cfg GatewayConfig) 
 			},
 		},
 	}
+
+	// 初始化一致性哈希环（150个虚拟节点）
+	g.hashRing = NewConsistentHash(150, nil)
+	// 注册当前网关节点
+	g.hashRing.Add(nodeID)
+
+	// 初始化消息路由器
+	g.router = NewMessageRouter(g, nodeID)
+
 	return g
 }
 
 // Init 初始化组件
 func (g *GatewayComponent) Init() error {
 	slog.Info("GatewayComponent 初始化")
-	
+
 	// 注册路由
 	g.app.GET("/ws", g.HandleWS)
-	
+
+	// 启动消息路由器
+	g.router.Start()
+
 	// 订阅NATS房间消息
 	if g.nats != nil {
 		g.nats.Subscribe("room.*.broadcast", g.handleRoomBroadcast)
 		g.nats.Subscribe("room.*.player_leave", g.handlePlayerLeave)
+		// 订阅跨节点转发消息
+		g.nats.Subscribe(fmt.Sprintf("gateway.%s.forward", g.nodeID), g.router.HandleForwardedMessage)
 	}
 	return nil
 }
@@ -322,6 +340,17 @@ func (g *GatewayComponent) handleJoin(wsc *WSConnection, msg *common.WSMessage) 
 		return
 	}
 
+	// 使用消息路由器确定房间应该路由到哪个网关节点
+	result, err := g.router.RouteMessage(msg.RoomID, msg)
+	if err != nil {
+		g.sendError(wsc, err.Error())
+		return
+	}
+
+	// 如果需要转发到其他节点，路由器会自动处理
+	// 当前节点仍然处理本地连接的加入逻辑
+	slog.Info("房间路由", "room_id", msg.RoomID, "target_node", result.TargetNode, "is_local", result.IsLocal)
+
 	wsc.roomID = msg.RoomID
 	wsc.lastPing = time.Now()
 
@@ -518,4 +547,33 @@ func (g *GatewayComponent) handlePlayerLeave(data []byte) {
 
 func generateConnID() string {
 	return fmt.Sprintf("conn_%d", time.Now().UnixNano())
+}
+
+// ========== 节点管理方法 ==========
+
+// AddGatewayNode 添加网关节点到哈希环
+func (g *GatewayComponent) AddGatewayNode(nodeID string) {
+	g.hashRing.Add(nodeID)
+	slog.Info("网关节点已添加", "node_id", nodeID, "total_nodes", g.hashRing.Size())
+}
+
+// RemoveGatewayNode 从哈希环移除网关节点
+func (g *GatewayComponent) RemoveGatewayNode(nodeID string) {
+	g.hashRing.Remove(nodeID)
+	slog.Info("网关节点已移除", "node_id", nodeID, "total_nodes", g.hashRing.Size())
+}
+
+// GetRoomNode 获取房间对应的网关节点
+func (g *GatewayComponent) GetRoomNode(roomID string) string {
+	return g.hashRing.Get(roomID)
+}
+
+// GetRoomNodes 获取房间对应的N个副本节点（用于高可用）
+func (g *GatewayComponent) GetRoomNodes(roomID string, n int) []string {
+	return g.hashRing.GetN(roomID, n)
+}
+
+// GetAllNodes 获取所有网关节点列表
+func (g *GatewayComponent) GetAllNodes() []string {
+	return g.hashRing.Nodes()
 }
