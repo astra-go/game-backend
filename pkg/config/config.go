@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,6 +14,9 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 	"gopkg.in/yaml.v3"
+
+	"github.com/astra-go/astra/config"
+	confignacos "github.com/astra-go/astra/config/nacos"
 )
 
 const (
@@ -24,9 +28,9 @@ const (
 type Config struct {
 	HTTP struct {
 		GatewayAddr string `yaml:"gateway_addr"`
-		RoomAddr   string `yaml:"room_addr"`
-		MatchAddr  string `yaml:"match_addr"`
-		PlayerAddr string `yaml:"player_addr"`
+		RoomAddr    string `yaml:"room_addr"`
+		MatchAddr   string `yaml:"match_addr"`
+		PlayerAddr  string `yaml:"player_addr"`
 	} `yaml:"http"`
 
 	Redis struct {
@@ -38,21 +42,21 @@ type Config struct {
 	} `yaml:"redis"`
 
 	MySQL struct {
-		Host       string `yaml:"host"`
-		Port       int    `yaml:"port"`
-		User       string `yaml:"user"`
-		Password   string `yaml:"password"`
-		Database   string `yaml:"database"`
-		Charset    string `yaml:"charset"`
-		ParseTime  bool   `yaml:"parse_time"`
-		MaxIdleConns int  `yaml:"max_idle_conns"`
-		MaxOpenConns int  `yaml:"max_open_conns"`
+		Host         string `yaml:"host"`
+		Port         int    `yaml:"port"`
+		User         string `yaml:"user"`
+		Password     string `yaml:"password"`
+		Database     string `yaml:"database"`
+		Charset      string `yaml:"charset"`
+		ParseTime    bool   `yaml:"parse_time"`
+		MaxIdleConns int    `yaml:"max_idle_conns"`
+		MaxOpenConns int    `yaml:"max_open_conns"`
 	} `yaml:"mysql"`
 
 	NATS struct {
-		URL          string `yaml:"url"`
-		MaxReconnect int    `yaml:"max_reconnect"`
-		ReconnectWait int   `yaml:"reconnect_wait"`
+		URL           string `yaml:"url"`
+		MaxReconnect  int    `yaml:"max_reconnect"`
+		ReconnectWait int    `yaml:"reconnect_wait"`
 	} `yaml:"nats"`
 
 	Game struct {
@@ -92,27 +96,23 @@ type Config struct {
 	} `yaml:"log"`
 
 	Ratelimit struct {
-		Enabled            bool `yaml:"enabled"`
-		RequestsPerSecond  int  `yaml:"requests_per_second"`
-		Burst              int  `yaml:"burst"`
+		Enabled           bool `yaml:"enabled"`
+		RequestsPerSecond int  `yaml:"requests_per_second"`
+		Burst             int  `yaml:"burst"`
 	} `yaml:"ratelimit"`
 }
 
 var (
 	globalConfig *Config
 	configMutex  sync.RWMutex
-	nacosClient  config_client.IConfigClient
-	dataID       string
-	group        string
+	astraConfig  *config.Config
 )
 
 // LoadConfig 加载配置（优先从Nacos，失败则使用本地文件）
 func LoadConfig(nacosConfigPath string) (*Config, error) {
-	// 尝试从Nacos加载
-	cfg, err := loadFromNacos(nacosConfigPath)
+	cfg, err := loadWithAstra(nacosConfigPath)
 	if err != nil {
 		slog.Warn("从Nacos加载配置失败，使用本地配置", "error", err)
-		// 降级：使用本地配置
 		cfg, err = loadFromLocal()
 		if err != nil {
 			return nil, fmt.Errorf("加载本地配置失败: %w", err)
@@ -128,43 +128,94 @@ func LoadConfig(nacosConfigPath string) (*Config, error) {
 	return cfg, nil
 }
 
-// loadFromNacos 从Nacos加载配置
-func loadFromNacos(nacosConfigPath string) (*Config, error) {
-	// 读取Nacos连接配置
-	nacosConfig, err := readNacosConnectionConfig(nacosConfigPath)
+// loadWithAstra 使用 astra 配置系统加载
+func loadWithAstra(nacosConfigPath string) (*Config, error) {
+	nacosCfg, err := readNacosConnectionConfig(nacosConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("读取Nacos配置失败: %w", err)
 	}
 
-	// 创建Nacos客户端
-	client, err := createNacosClient(nacosConfig)
+	// 创建 Nacos 客户端
+	client, err := createNacosClient(nacosCfg)
 	if err != nil {
 		return nil, fmt.Errorf("创建Nacos客户端失败: %w", err)
 	}
 
-	nacosClient = client
-	dataID = nacosConfig.DataID
-	group = nacosConfig.Group
-
-	// 获取配置
-	content, err := client.GetConfig(vo.ConfigParam{
-		DataId: dataID,
-		Group:  group,
+	// 构建 astra config 源
+	localSrc := &localConfigSource{path: findLocalConfigPath()}
+	nacosSrc := confignacos.New(client, confignacos.Config{
+		DataID: nacosCfg.DataID,
+		Group:  nacosCfg.Group,
+		Format: config.YAMLFormat,
 	})
+
+	// 使用 astra 配置系统加载
+	astraCfg, err := config.New(localSrc, nacosSrc)
 	if err != nil {
-		return nil, fmt.Errorf("获取Nacos配置失败: %w", err)
+		return nil, fmt.Errorf("创建astra配置失败: %w", err)
 	}
 
-	// 解析配置
-	cfg := &Config{}
-	if err := yaml.Unmarshal([]byte(content), cfg); err != nil {
-		return nil, fmt.Errorf("解析Nacos配置失败: %w", err)
+	// 解析到 Config 结构体
+	appCfg := &Config{}
+	if err := astraCfg.Scan(appCfg); err != nil {
+		return nil, fmt.Errorf("解析配置失败: %w", err)
 	}
 
-	// 启动配置监听（热更新）
-	go watchConfig(client, dataID, group)
+	// 启动热更新
+	ctx, cancel := context.WithCancel(context.Background())
+	astraCfg.StartWatch(ctx)
 
-	return cfg, nil
+	// 注册热更新回调
+	astraConfig = astraCfg
+	astraConfig.Watch(func() {
+		newCfg := &Config{}
+		if err := astraConfig.Scan(newCfg); err != nil {
+			slog.Error("热更新配置解析失败", "error", err)
+			return
+		}
+		configMutex.Lock()
+		globalConfig = newCfg
+		configMutex.Unlock()
+		slog.Info("配置热更新成功")
+	})
+
+	// 保持 cancel 引用（当前版本忽略，context 由系统管理）
+	_ = cancel
+
+	return appCfg, nil
+}
+
+// localConfigSource 本地配置文件源，实现 config.Source 接口
+type localConfigSource struct {
+	path string
+}
+
+func (s *localConfigSource) Name() string { return fmt.Sprintf("local:%s", s.path) }
+
+func (s *localConfigSource) Load() (map[string]any, error) {
+	data, err := os.ReadFile(s.path)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	if err := yaml.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func findLocalConfigPath() string {
+	paths := []string{
+		"configs/config.yaml",
+		"../configs/config.yaml",
+		filepath.Join(".", "configs", "config.yaml"),
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return "configs/config.yaml"
 }
 
 // readNacosConnectionConfig 读取Nacos连接配置
@@ -183,7 +234,6 @@ func readNacosConnectionConfig(path string) (*NacosConnectionConfig, error) {
 		return nil, err
 	}
 
-	// 设置默认值
 	if cfg.DataID == "" {
 		cfg.DataID = DefaultDataID
 	}
@@ -206,15 +256,10 @@ type NacosConnectionConfig struct {
 
 // createNacosClient 创建Nacos客户端
 func createNacosClient(cfg *NacosConnectionConfig) (config_client.IConfigClient, error) {
-	// 创建ServerConfig
 	serverConfig := []constant.ServerConfig{
-		*constant.NewServerConfig(
-			cfg.ServerAddr,
-			8848, // 默认端口
-		),
+		*constant.NewServerConfig(cfg.ServerAddr, 8848),
 	}
 
-	// 创建ClientConfig
 	clientConfig := *constant.NewClientConfig(
 		constant.WithNamespaceId(cfg.Namespace),
 		constant.WithUsername(cfg.Username),
@@ -226,82 +271,23 @@ func createNacosClient(cfg *NacosConnectionConfig) (config_client.IConfigClient,
 		constant.WithLogLevel("info"),
 	)
 
-	// 创建客户端
-	client, err := clients.NewConfigClient(
-		vo.NacosClientParam{
-			ClientConfig:  &clientConfig,
-			ServerConfigs: serverConfig,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
-// watchConfig 监听配置变更
-func watchConfig(client config_client.IConfigClient, dataID, group string) {
-	err := client.ListenConfig(vo.ConfigParam{
-		DataId: dataID,
-		Group:  group,
-		OnChange: func(namespace, group, dataId, data string) {
-			slog.Info("检测到配置变更，正在重新加载...", 
-				"data_id", dataId,
-				"group", group,
-			)
-
-			cfg := &Config{}
-			if err := yaml.Unmarshal([]byte(data), cfg); err != nil {
-				slog.Error("解析新配置失败", "error", err)
-				return
-			}
-
-			configMutex.Lock()
-			globalConfig = cfg
-			configMutex.Unlock()
-
-			slog.Info("配置热更新成功")
-		},
+	return clients.NewConfigClient(vo.NacosClientParam{
+		ClientConfig:  &clientConfig,
+		ServerConfigs: serverConfig,
 	})
-
-	if err != nil {
-		slog.Error("监听Nacos配置失败", "error", err)
-	}
 }
 
-// loadFromLocal 从本地配置文件加载
+// loadFromLocal 从本地配置文件加载（降级方案）
 func loadFromLocal() (*Config, error) {
-	// 尝试多个可能的路径
-	paths := []string{
-		"configs/config.yaml",
-		"../configs/config.yaml",
-		filepath.Join(".", "configs", "config.yaml"),
-	}
-
-	var configPath string
-	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
-			configPath = p
-			break
-		}
-	}
-
-	if configPath == "" {
-		return nil, fmt.Errorf("未找到配置文件 configs/config.yaml")
-	}
-
-	data, err := os.ReadFile(configPath)
+	cfg := &Config{}
+	data, err := os.ReadFile(findLocalConfigPath())
 	if err != nil {
 		return nil, err
 	}
-
-	cfg := &Config{}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
-
-	slog.Info("从本地配置文件加载成功", "path", configPath)
+	slog.Info("从本地配置文件加载成功")
 	return cfg, nil
 }
 
@@ -312,13 +298,12 @@ func GetConfig() *Config {
 	return globalConfig
 }
 
-// GetString 获取字符串配置（支持点号路径，如 "redis.addr"）
+// GetString 获取字符串配置
 func GetString(path string) string {
 	cfg := GetConfig()
 	if cfg == nil {
 		return ""
 	}
-
 	switch path {
 	case "redis.addr":
 		return cfg.Redis.Addr
@@ -337,7 +322,6 @@ func GetInt(path string) int {
 	if cfg == nil {
 		return 0
 	}
-
 	switch path {
 	case "redis.db":
 		return cfg.Redis.DB
@@ -356,7 +340,6 @@ func GetBool(path string) bool {
 	if cfg == nil {
 		return false
 	}
-
 	switch path {
 	case "metrics.enabled":
 		return cfg.Metrics.Enabled
@@ -381,14 +364,10 @@ func (c *Config) GetDSN() string {
 }
 
 // GetRedisAddr 获取Redis地址
-func (c *Config) GetRedisAddr() string {
-	return c.Redis.Addr
-}
+func (c *Config) GetRedisAddr() string { return c.Redis.Addr }
 
 // GetNATSAddr 获取NATS地址
-func (c *Config) GetNATSAddr() string {
-	return c.NATS.URL
-}
+func (c *Config) GetNATSAddr() string { return c.NATS.URL }
 
 // GetHTTPAddr 获取HTTP服务地址
 func (c *Config) GetHTTPAddr(service string) string {
@@ -406,15 +385,12 @@ func (c *Config) GetHTTPAddr(service string) string {
 	}
 }
 
-// WatchConfigChanges 手动监听配置变更（可选）
+// WatchConfigChanges 手动监听配置变更
 func WatchConfigChanges(callback func(*Config)) {
-	// 定期检查配置是否变更（简单实现）
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
-
 		for range ticker.C {
-			// 这里可以添加自定义的检查逻辑
 			if callback != nil {
 				callback(GetConfig())
 			}
