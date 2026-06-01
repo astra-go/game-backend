@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/astra-go/game-backend/internal/models"
+	"github.com/astra-go/game-backend/pkg/chat"
 	"github.com/go-redis/redis/v8"
 	"github.com/nats-io/nats.go"
 	"gorm.io/gorm"
-
-	"github.com/astra-go/game-backend/internal/models"
 )
 
 var (
@@ -28,17 +28,19 @@ const (
 
 // ChatService handles chat-related operations
 type ChatService struct {
-	db    *gorm.DB
-	redis *redis.Client
-	nats  *nats.Conn
+	db             *gorm.DB
+	redis          *redis.Client
+	nats           *nats.Conn
+	messageFilter  *chat.MessageFilter
 }
 
 // NewChatService creates a new chat service
-func NewChatService(db *gorm.DB, redis *redis.Client, nats *nats.Conn) *ChatService {
+func NewChatService(db *gorm.DB, redisClient *redis.Client, natsConn *nats.Conn) *ChatService {
 	return &ChatService{
-		db:    db,
-		redis: redis,
-		nats:  nats,
+		db:             db,
+		redis:          redisClient,
+		nats:           natsConn,
+		messageFilter:  chat.NewMessageFilter(),
 	}
 }
 
@@ -62,10 +64,23 @@ type ChatMessageDTO struct {
 
 // SendMessage sends a chat message
 func (s *ChatService) SendMessage(ctx context.Context, msg *models.ChatMessage) error {
+	// 1. 消息长度检查
 	if len(msg.Content) > MaxMessageLength {
 		return ErrMessageTooLong
 	}
 
+	// 2. 敏感词和垃圾信息过滤
+	filterResult := s.messageFilter.Filter(msg.FromPlayer, msg.Content)
+	if filterResult.IsSpam {
+		return errors.New(filterResult.SpamReason + ": " + filterResult.Suggestion)
+	}
+	if filterResult.HasIllegal {
+		return errors.New("消息包含敏感词")
+	}
+	// 使用过滤后的内容
+	msg.Content = filterResult.Filtered
+
+	// 3. 禁言检查
 	isMuted, err := s.IsPlayerMuted(ctx, msg.FromPlayer)
 	if err != nil {
 		return err
