@@ -50,7 +50,7 @@ func (s *FriendService) SendFriendRequest(ctx context.Context, fromPlayer, toPla
 	}
 
 	var existingRequest models.FriendRequest
-	err = s.db.Where("from_player = ? AND to_player = ? AND status = ?", fromPlayer, toPlayer, "pending").
+	err = s.db.Where("sender_id = ? AND receiver_id = ? AND status = ?", fromPlayer, toPlayer, "pending").
 		First(&existingRequest).Error
 	if err == nil {
 		return ErrFriendRequestExists
@@ -68,9 +68,8 @@ func (s *FriendService) SendFriendRequest(ctx context.Context, fromPlayer, toPla
 	}
 
 	request := &models.FriendRequest{
-		FromPlayer: fromPlayer,
-		ToPlayer:   toPlayer,
-		Message:    message,
+		SenderID:   fromPlayer,
+		ReceiverID: toPlayer,
 		Status:     "pending",
 	}
 
@@ -88,7 +87,7 @@ func (s *FriendService) AcceptFriendRequest(ctx context.Context, requestID, play
 		return err
 	}
 
-	if request.ToPlayer != playerID {
+	if request.ReceiverID != playerID {
 		return errors.New("unauthorized to accept this request")
 	}
 
@@ -103,8 +102,8 @@ func (s *FriendService) AcceptFriendRequest(ctx context.Context, requestID, play
 		}
 
 		friend1 := &models.Friend{
-			PlayerID: request.FromPlayer,
-			FriendID: request.ToPlayer,
+			PlayerID: request.SenderID,
+			FriendID: request.ReceiverID,
 			Status:   models.FriendStatusAccepted,
 		}
 		if err := tx.Create(friend1).Error; err != nil {
@@ -112,16 +111,16 @@ func (s *FriendService) AcceptFriendRequest(ctx context.Context, requestID, play
 		}
 
 		friend2 := &models.Friend{
-			PlayerID: request.ToPlayer,
-			FriendID: request.FromPlayer,
+			PlayerID: request.ReceiverID,
+			FriendID: request.SenderID,
 			Status:   models.FriendStatusAccepted,
 		}
 		if err := tx.Create(friend2).Error; err != nil {
 			return err
 		}
 
-		s.invalidateFriendCache(ctx, request.FromPlayer)
-		s.invalidateFriendCache(ctx, request.ToPlayer)
+		s.invalidateFriendCache(ctx, request.SenderID)
+		s.invalidateFriendCache(ctx, request.ReceiverID)
 
 		return nil
 	})
@@ -138,7 +137,7 @@ func (s *FriendService) RejectFriendRequest(ctx context.Context, requestID, play
 		return err
 	}
 
-	if request.ToPlayer != playerID {
+	if request.ReceiverID != playerID {
 		return errors.New("unauthorized to reject this request")
 	}
 
@@ -198,7 +197,6 @@ func (s *FriendService) BlockPlayer(ctx context.Context, playerID, blockedID uin
 		blacklist := &models.Blacklist{
 			PlayerID:  playerID,
 			BlockedID: blockedID,
-			Reason:    reason,
 		}
 		if err := tx.Create(blacklist).Error; err != nil {
 			return err
