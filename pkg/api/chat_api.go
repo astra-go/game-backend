@@ -1,25 +1,41 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/astra-go/astra"
 	"github.com/astra-go/game-backend/internal/models"
-	"github.com/astra-go/game-backend/internal/services"
 	"github.com/astra-go/game-backend/pkg/middleware"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
+
+// ChatServiceInterface 聊天服务接口（用于依赖注入）
+type ChatServiceInterface interface {
+	SendMessage(ctx context.Context, msg *models.ChatMessage) error
+	GetPrivateMessages(ctx context.Context, player1, player2 uint64, limit int) ([]models.ChatMessage, error)
+	GetGuildMessages(ctx context.Context, guildID uint64, limit int) ([]models.ChatMessage, error)
+	GetWorldMessages(ctx context.Context, limit int) ([]models.ChatMessage, error)
+	GetRoomMessages(ctx context.Context, roomID uint64, limit int) ([]models.ChatMessage, error)
+	MarkMessagesAsRead(ctx context.Context, playerID, targetID uint64, targetType string) error
+	GetUnreadCount(ctx context.Context, playerID uint64) (int, error)
+	MutePlayer(ctx context.Context, playerID uint64, duration time.Duration) error
+	UnmutePlayer(ctx context.Context, playerID uint64) error
+	IsPlayerMuted(ctx context.Context, playerID uint64) (bool, error)
+	DB() *gorm.DB
+}
 
 // ChatAPI 聊天系统API
 type ChatAPI struct {
-	chatService *services.ChatService
-	logger      *zap.Logger
+	chatService ChatServiceInterface
+	logger     *zap.Logger
 }
 
 // NewChatAPI 创建聊天API实例
-func NewChatAPI(chatService *services.ChatService, logger *zap.Logger) *ChatAPI {
+func NewChatAPI(chatService ChatServiceInterface, logger *zap.Logger) *ChatAPI {
 	return &ChatAPI{
 		chatService: chatService,
 		logger:      logger,

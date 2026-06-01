@@ -46,6 +46,14 @@ func (m *MockChatService) GetGuildMessages(ctx context.Context, guildID uint64, 
 	return args.Get(0).([]models.ChatMessage), args.Error(1)
 }
 
+func (m *MockChatService) GetWorldMessages(ctx context.Context, limit int) ([]models.ChatMessage, error) {
+	args := m.Called(ctx, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]models.ChatMessage), args.Error(1)
+}
+
 func (m *MockChatService) GetRoomMessages(ctx context.Context, roomID uint64, limit int) ([]models.ChatMessage, error) {
 	args := m.Called(ctx, roomID, limit)
 	if args.Get(0) == nil {
