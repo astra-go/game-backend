@@ -8,9 +8,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/pkg/common"
+	"github.com/redis/go-redis/v9"
 )
 
 var ctx = context.Background()
@@ -19,7 +19,7 @@ var ctx = context.Background()
 type MatchComponent struct {
 	redis        *redis.Client
 	nats          NATSClient
-	logger        *zap.Logger
+	logger        *log.Logger
 	config        MatchConfig
 	matchTimeout  time.Duration
 	queueSize     int
@@ -56,7 +56,7 @@ type NATSClient interface {
 }
 
 // NewMatchComponent 创建匹配组件
-func NewMatchComponent(redis *redis.Client, nats NATSClient, logger *zap.Logger, cfg MatchConfig) *MatchComponent {
+func NewMatchComponent(redis *redis.Client, nats NATSClient, logger *log.Logger, cfg MatchConfig) *MatchComponent {
 	return &MatchComponent{
 		redis:       redis,
 		nats:         nats,
@@ -342,8 +342,8 @@ func (m *MatchComponent) JoinCustomRoom(playerID, roomID, password string) error
 	
 	// 加入房间逻辑
 	m.logger.Info("玩家加入自定义房间",
-		zap.String("player_id", playerID),
-		zap.String("room_id", roomID),
+		"player_id", playerID,
+		"room_id", roomID,
 	)
 	
 	return nil
@@ -443,10 +443,10 @@ func (m *MatchComponent) Enqueue(playerID string, mode common.GameMode, mmr int3
 	m.updateQueueSize(mode)
 
 	m.logger.Info("玩家加入匹配队列",
-		zap.String("player_id", playerID),
-		zap.String("mode", string(mode)),
-		zap.Int32("mmr", mmr),
-		zap.Int64("enqueue_at", now),
+		"player_id", playerID,
+		"mode", string(mode),
+		"mmr", mmr,
+		"enqueue_at", now,
 	)
 
 	return nil
@@ -476,9 +476,9 @@ func (m *MatchComponent) Dequeue(playerID string) error {
 	waitTime := time.Now().Unix() - matchInfo.EnqueueAt
 
 	m.logger.Info("玩家退出匹配队列",
-		zap.String("player_id", playerID),
-		zap.String("mode", matchInfo.Mode),
-		zap.Int64("wait_time", waitTime),
+		"player_id", playerID,
+		"mode", matchInfo.Mode,
+		"wait_time", waitTime,
 	)
 
 	return nil
@@ -509,7 +509,7 @@ func (m *MatchComponent) MatchRange(mode common.GameMode, playerID string, mmr i
 
 			removed, err := m.removePlayersAtomically(queueKey, selected)
 			if err != nil {
-				m.logger.Error("原子移除玩家失败", zap.Error(err))
+				m.logger.Error("原子移除玩家失败", "error", err)
 				continue
 			}
 
@@ -519,10 +519,10 @@ func (m *MatchComponent) MatchRange(mode common.GameMode, playerID string, mmr i
 				quality := m.calculateMatchQuality(players[:requiredPlayers])
 
 				m.logger.Info("匹配成功",
-					zap.String("mode", string(mode)),
-					zap.Strings("players", removed),
-					zap.Int32("mmr_delta", delta),
-					zap.Float64("quality", quality),
+					"mode", string(mode),
+					"players", removed,
+					"mmr_delta", delta,
+					"quality", quality,
 				)
 
 				return removed, nil
@@ -663,7 +663,7 @@ func (m *MatchComponent) processMatchQueue() {
 			queueKey := fmt.Sprintf("match:queue:%s", mode)
 			players, err := m.redis.ZRangeWithScores(ctx, queueKey, 0, -1).Result()
 			if err != nil {
-				m.logger.Error("获取匹配队列失败", zap.Error(err))
+				m.logger.Error("获取匹配队列失败", "error", err)
 				continue
 			}
 
@@ -677,7 +677,7 @@ func (m *MatchComponent) processMatchQueue() {
 
 				matched, err := m.MatchRange(mode, playerID, mmr)
 				if err != nil {
-					m.logger.Error("匹配失败", zap.Error(err), zap.String("player_id", playerID))
+					m.logger.Error("匹配失败", "error", err, "player_id", playerID)
 					continue
 				}
 
@@ -699,7 +699,7 @@ func (m *MatchComponent) processTimeout() {
 		processingKey := "match:processing"
 		players, err := m.redis.HGetAll(ctx, processingKey).Result()
 		if err != nil {
-			m.logger.Error("获取匹配中玩家失败", zap.Error(err))
+			m.logger.Error("获取匹配中玩家失败", "error", err)
 			continue
 		}
 
@@ -709,7 +709,7 @@ func (m *MatchComponent) processTimeout() {
 		for playerID, infoData := range players {
 			var matchInfo PlayerMatchInfo
 			if err := json.Unmarshal([]byte(infoData), &matchInfo); err != nil {
-				m.logger.Error("解析匹配信息失败", zap.Error(err))
+				m.logger.Error("解析匹配信息失败", "error", err)
 				continue
 			}
 
@@ -717,9 +717,9 @@ func (m *MatchComponent) processTimeout() {
 
 			if waitTime > timeoutThreshold {
 				m.logger.Warn("匹配超时，移除玩家",
-					zap.String("player_id", playerID),
-					zap.String("mode", matchInfo.Mode),
-					zap.Int64("wait_time", waitTime),
+					"player_id", playerID,
+					"mode", matchInfo.Mode,
+					"wait_time", waitTime,
 				)
 
 				queueKey := fmt.Sprintf("match:queue:%s", matchInfo.Mode)
@@ -813,10 +813,10 @@ func (m *MatchComponent) onCreateRoom(mode common.GameMode, players []string) {
 	}
 
 	m.logger.Info("房间创建成功",
-		zap.String("room_id", roomID),
-		zap.Strings("players", players),
-		zap.Int32("avg_mmr", avgMMR),
-		zap.Int64("wait_time", waitTime),
+		"room_id", roomID,
+		"players", players,
+		"avg_mmr", avgMMR,
+		"wait_time", waitTime,
 	)
 }
 
@@ -825,7 +825,7 @@ func (m *MatchComponent) updateQueueSize(mode common.GameMode) {
 	queueKey := fmt.Sprintf("match:queue:%s", mode)
 	_, err := m.redis.ZCard(ctx, queueKey).Result()
 	if err != nil {
-		m.logger.Error("获取队列大小失败", zap.Error(err))
+		m.logger.Error("获取队列大小失败", "error", err)
 		return
 	}
 }

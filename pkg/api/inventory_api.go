@@ -4,20 +4,21 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/astra-go/astra/log"
+
+	"github.com/astra-go/astra"
 	"github.com/astra-go/game-backend/pkg/inventory"
 	"github.com/astra-go/game-backend/pkg/middleware"
-	"github.com/astra-go/astra"
-	"go.uber.org/zap"
 )
 
 // InventoryAPI 背包API路由组
 type InventoryAPI struct {
 	ic     *inventory.InventoryComponent
-	logger *zap.Logger
+	logger *log.Logger
 }
 
 // NewInventoryAPI 创建背包API实例
-func NewInventoryAPI(ic *inventory.InventoryComponent, logger *zap.Logger) *InventoryAPI {
+func NewInventoryAPI(ic *inventory.InventoryComponent, logger *log.Logger) *InventoryAPI {
 	return &InventoryAPI{
 		ic:     ic,
 		logger: logger,
@@ -56,7 +57,7 @@ func (api *InventoryAPI) GetInventory(c *astra.Ctx) error {
 
 	slots, err := api.ic.GetInventory(pid)
 	if err != nil {
-		api.logger.Error("获取背包失败", zap.String("player_id", pid), zap.Error(err))
+		api.logger.Error("获取背包失败", "player_id", pid, "error", err)
 		return ResponseError(c, http.StatusInternalServerError, "获取背包失败")
 	}
 
@@ -77,16 +78,16 @@ func (api *InventoryAPI) UseItem(c *astra.Ctx) error {
 	}
 
 	if err := c.BindJSON(&req); err != nil {
-		api.logger.Warn("使用物品请求参数解析失败", zap.Error(err))
+		api.logger.Warn("使用物品请求参数解析失败", "error", err)
 		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
 	}
 
 	result, err := api.ic.UseItem(pid, req.SlotIndex)
 	if err != nil {
 		api.logger.Warn("使用物品失败",
-			zap.String("player_id", pid),
-			zap.Int32("slot_index", req.SlotIndex),
-			zap.Error(err),
+			"player_id", pid,
+			"slot_index", req.SlotIndex,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusBadRequest, err.Error())
 	}
@@ -108,16 +109,16 @@ func (api *InventoryAPI) EquipItem(c *astra.Ctx) error {
 	}
 
 	if err := c.BindJSON(&req); err != nil {
-		api.logger.Warn("装备物品请求参数解析失败", zap.Error(err))
+		api.logger.Warn("装备物品请求参数解析失败", "error", err)
 		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
 	}
 
 	err := api.ic.EquipItem(pid, req.SlotIndex)
 	if err != nil {
 		api.logger.Warn("装备物品失败",
-			zap.String("player_id", pid),
-			zap.Int32("slot_index", req.SlotIndex),
-			zap.Error(err),
+			"player_id", pid,
+			"slot_index", req.SlotIndex,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusBadRequest, err.Error())
 	}
@@ -139,16 +140,16 @@ func (api *InventoryAPI) UnequipItem(c *astra.Ctx) error {
 	}
 
 	if err := c.BindJSON(&req); err != nil {
-		api.logger.Warn("卸下装备请求参数解析失败", zap.Error(err))
+		api.logger.Warn("卸下装备请求参数解析失败", "error", err)
 		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
 	}
 
 	err := api.ic.UnequipItem(pid, req.EquipmentSlotID)
 	if err != nil {
 		api.logger.Warn("卸下装备失败",
-			zap.String("player_id", pid),
-			zap.Int32("equipment_slot_id", req.EquipmentSlotID),
-			zap.Error(err),
+			"player_id", pid,
+			"equipment_slot_id", req.EquipmentSlotID,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusBadRequest, err.Error())
 	}
@@ -167,7 +168,7 @@ func (api *InventoryAPI) GetEquipped(c *astra.Ctx) error {
 
 	slots, err := api.ic.GetEquipped(pid)
 	if err != nil {
-		api.logger.Error("获取装备列表失败", zap.String("player_id", pid), zap.Error(err))
+		api.logger.Error("获取装备列表失败", "player_id", pid, "error", err)
 		return ResponseError(c, http.StatusInternalServerError, "获取装备列表失败")
 	}
 
@@ -189,17 +190,17 @@ func (api *InventoryAPI) SwapSlots(c *astra.Ctx) error {
 	}
 
 	if err := c.BindJSON(&req); err != nil {
-		api.logger.Warn("交换格子请求参数解析失败", zap.Error(err))
+		api.logger.Warn("交换格子请求参数解析失败", "error", err)
 		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
 	}
 
 	err := api.ic.SwapSlots(pid, req.SlotA, req.SlotB)
 	if err != nil {
 		api.logger.Warn("交换格子失败",
-			zap.String("player_id", pid),
-			zap.Int32("slot_a", req.SlotA),
-			zap.Int32("slot_b", req.SlotB),
-			zap.Error(err),
+			"player_id", pid,
+			"slot_a", req.SlotA,
+			"slot_b", req.SlotB,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusBadRequest, err.Error())
 	}
@@ -222,17 +223,17 @@ func (api *InventoryAPI) RemoveItem(c *astra.Ctx) error {
 	}
 
 	if err := c.BindJSON(&req); err != nil {
-		api.logger.Warn("移除物品请求参数解析失败", zap.Error(err))
+		api.logger.Warn("移除物品请求参数解析失败", "error", err)
 		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
 	}
 
 	err := api.ic.RemoveItem(pid, req.SlotIndex, req.Quantity)
 	if err != nil {
 		api.logger.Warn("移除物品失败",
-			zap.String("player_id", pid),
-			zap.Int32("slot_index", req.SlotIndex),
-			zap.Int32("quantity", req.Quantity),
-			zap.Error(err),
+			"player_id", pid,
+			"slot_index", req.SlotIndex,
+			"quantity", req.Quantity,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusBadRequest, err.Error())
 	}
@@ -264,7 +265,7 @@ func (api *InventoryAPI) ListItemTemplates(c *astra.Ctx) error {
 
 	templates, err := api.ic.ListItemTemplates(itemType, rarity, limit, offset)
 	if err != nil {
-		api.logger.Error("列出物品模板失败", zap.Error(err))
+		api.logger.Error("列出物品模板失败", "error", err)
 		return ResponseError(c, http.StatusInternalServerError, "获取物品列表失败")
 	}
 
@@ -281,7 +282,7 @@ func (api *InventoryAPI) GetItemTemplate(c *astra.Ctx) error {
 
 	template, err := api.ic.GetItemTemplate(itemID)
 	if err != nil {
-		api.logger.Warn("获取物品模板失败", zap.String("item_id", itemID), zap.Error(err))
+		api.logger.Warn("获取物品模板失败", "item_id", itemID, "error", err)
 		return ResponseError(c, http.StatusNotFound, "物品不存在")
 	}
 

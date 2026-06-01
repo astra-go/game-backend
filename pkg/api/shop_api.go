@@ -9,17 +9,17 @@ import (
 	"github.com/astra-go/astra"
 	"github.com/astra-go/game-backend/internal/models"
 	"github.com/astra-go/game-backend/internal/services"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 )
 
 // ShopAPI 商城 API
 type ShopAPI struct {
 	shopService *services.ShopService
-	logger      *zap.Logger
+	logger      *log.Logger
 }
 
 // NewShopAPI 创建商城 API
-func NewShopAPI(shopService *services.ShopService, logger *zap.Logger) *ShopAPI {
+func NewShopAPI(shopService *services.ShopService, logger *log.Logger) *ShopAPI {
 	return &ShopAPI{shopService: shopService, logger: logger}
 }
 
@@ -66,7 +66,7 @@ func (api *ShopAPI) ListProducts(c *astra.Ctx) error {
 
 	products, total, err := api.shopService.ListProducts(c.Request().Context(), category, status, page, pageSize)
 	if err != nil {
-		api.logger.Error("获取商品列表失败", zap.Error(err))
+		api.logger.Error("获取商品列表失败", "error", err)
 		return ResponseError(c, 500, "获取商品列表失败")
 	}
 
@@ -88,7 +88,7 @@ func (api *ShopAPI) GetProduct(c *astra.Ctx) error {
 		if errors.Is(err, services.ErrProductNotFound) {
 			return ResponseError(c, 404, "商品不存在")
 		}
-		api.logger.Error("获取商品失败", zap.Error(err))
+		api.logger.Error("获取商品失败", "error", err)
 		return ResponseError(c, 500, "获取商品失败")
 	}
 
@@ -167,7 +167,7 @@ func (api *ShopAPI) CreateProduct(c *astra.Ctx) error {
 	}
 
 	if err := api.shopService.CreateProduct(c.Request().Context(), product); err != nil {
-		api.logger.Error("创建商品失败", zap.Error(err))
+		api.logger.Error("创建商品失败", "error", err)
 		return ResponseError(c, 500, "创建商品失败")
 	}
 
@@ -273,7 +273,7 @@ func (api *ShopAPI) UpdateProduct(c *astra.Ctx) error {
 	}
 
 	if err := api.shopService.UpdateProduct(c.Request().Context(), product); err != nil {
-		api.logger.Error("更新商品失败", zap.Error(err))
+		api.logger.Error("更新商品失败", "error", err)
 		return ResponseError(c, 500, "更新商品失败")
 	}
 
@@ -286,7 +286,7 @@ func (api *ShopAPI) DeleteProduct(c *astra.Ctx) error {
 	productID := c.Param("id")
 
 	if err := api.shopService.DeleteProduct(c.Request().Context(), productID); err != nil {
-		api.logger.Error("删除商品失败", zap.Error(err))
+		api.logger.Error("删除商品失败", "error", err)
 		return ResponseError(c, 500, "删除商品失败")
 	}
 
@@ -347,7 +347,7 @@ func (api *ShopAPI) ListOrders(c *astra.Ctx) error {
 
 	orders, total, err := api.shopService.ListOrders(c.Request().Context(), playerID, status, page, pageSize)
 	if err != nil {
-		api.logger.Error("获取订单列表失败", zap.Error(err))
+		api.logger.Error("获取订单列表失败", "error", err)
 		return ResponseError(c, 500, "获取订单列表失败")
 	}
 
@@ -476,7 +476,7 @@ func (api *ShopAPI) GetStock(c *astra.Ctx) error {
 
 	stock, err := api.shopService.GetStock(c.Request().Context(), productID)
 	if err != nil {
-		api.logger.Error("获取库存失败", zap.Error(err))
+		api.logger.Error("获取库存失败", "error", err)
 		return ResponseError(c, 500, "获取库存失败")
 	}
 

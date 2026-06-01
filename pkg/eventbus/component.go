@@ -6,15 +6,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/pkg/common"
 	"github.com/nats-io/nats.go"
-	"go.uber.org/zap"
 )
 
 // EventBusComponent 游戏事件总线组件（高层封装）
 type EventBusComponent struct {
 	bus      *EventBus
-	logger   *zap.Logger
+	logger   *log.Logger
 	handlers sync.Map // subject -> []HandlerFunc
 	mu       sync.RWMutex
 }
@@ -23,7 +23,7 @@ type EventBusComponent struct {
 type HandlerFunc func(data []byte) error
 
 // NewEventBusComponent 创建事件总线组件
-func NewEventBusComponent(bus *EventBus, logger *zap.Logger) *EventBusComponent {
+func NewEventBusComponent(bus *EventBus, logger *log.Logger) *EventBusComponent {
 	return &EventBusComponent{
 		bus:    bus,
 		logger: logger,
@@ -143,13 +143,13 @@ func (ebc *EventBusComponent) SubscribeRoomCreated(handler func(roomID string, r
 	return ebc.bus.Subscribe(SubjectRoomCreated, func(msg *nats.Msg) {
 		var room common.Room
 		if err := json.Unmarshal(msg.Data, &room); err != nil {
-			ebc.logger.Error("解析房间创建事件失败", zap.Error(err))
+			ebc.logger.Error("解析房间创建事件失败", "error", err)
 			return
 		}
 		if err := handler(room.ID, &room); err != nil {
 			ebc.logger.Error("处理房间创建事件失败",
-				zap.String("room_id", room.ID),
-				zap.Error(err),
+				"room_id", room.ID,
+				"error", err,
 			)
 		}
 	})
@@ -160,14 +160,14 @@ func (ebc *EventBusComponent) SubscribeRoomDestroyed(handler func(roomID string)
 	return ebc.bus.Subscribe(SubjectRoomDestroyed, func(msg *nats.Msg) {
 		var data map[string]string
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			ebc.logger.Error("解析房间销毁事件失败", zap.Error(err))
+			ebc.logger.Error("解析房间销毁事件失败", "error", err)
 			return
 		}
 		roomID := data["room_id"]
 		if err := handler(roomID); err != nil {
 			ebc.logger.Error("处理房间销毁事件失败",
-				zap.String("room_id", roomID),
-				zap.Error(err),
+				"room_id", roomID,
+				"error", err,
 			)
 		}
 	})
@@ -178,7 +178,7 @@ func (ebc *EventBusComponent) SubscribePlayerJoin(handler func(roomID, playerID 
 	return ebc.bus.Subscribe(SubjectRoomJoin, func(msg *nats.Msg) {
 		var data map[string]any
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			ebc.logger.Error("解析玩家加入事件失败", zap.Error(err))
+			ebc.logger.Error("解析玩家加入事件失败", "error", err)
 			return
 		}
 		roomID, ok := data["room_id"].(string)
@@ -205,9 +205,9 @@ func (ebc *EventBusComponent) SubscribePlayerJoin(handler func(roomID, playerID 
 		heroID := int32(heroIDFloat)
 		if err := handler(roomID, playerID, teamID, heroID); err != nil {
 			ebc.logger.Error("处理玩家加入事件失败",
-				zap.String("room_id", roomID),
-				zap.String("player_id", playerID),
-				zap.Error(err),
+				"room_id", roomID,
+				"player_id", playerID,
+				"error", err,
 			)
 		}
 	})
@@ -218,16 +218,16 @@ func (ebc *EventBusComponent) SubscribePlayerLeave(handler func(roomID, playerID
 	return ebc.bus.Subscribe(SubjectRoomLeave, func(msg *nats.Msg) {
 		var data map[string]string
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			ebc.logger.Error("解析玩家离开事件失败", zap.Error(err))
+			ebc.logger.Error("解析玩家离开事件失败", "error", err)
 			return
 		}
 		roomID := data["room_id"]
 		playerID := data["player_id"]
 		if err := handler(roomID, playerID); err != nil {
 			ebc.logger.Error("处理玩家离开事件失败",
-				zap.String("room_id", roomID),
-				zap.String("player_id", playerID),
-				zap.Error(err),
+				"room_id", roomID,
+				"player_id", playerID,
+				"error", err,
 			)
 		}
 	})
@@ -238,14 +238,14 @@ func (ebc *EventBusComponent) SubscribeRoomBroadcast(handler func(msg *common.WS
 	return ebc.bus.Subscribe(SubjectRoomBroadcast, func(natsMsg *nats.Msg) {
 		var msg common.WSMessage
 		if err := json.Unmarshal(natsMsg.Data, &msg); err != nil {
-			ebc.logger.Error("解析房间广播消息失败", zap.Error(err))
+			ebc.logger.Error("解析房间广播消息失败", "error", err)
 			return
 		}
 		if err := handler(&msg); err != nil {
 			ebc.logger.Error("处理房间广播消息失败",
-				zap.String("room_id", msg.RoomID),
-				zap.String("type", msg.Type),
-				zap.Error(err),
+				"room_id", msg.RoomID,
+				"type", msg.Type,
+				"error", err,
 			)
 		}
 	})
@@ -256,16 +256,16 @@ func (ebc *EventBusComponent) SubscribeRoomInput(handler func(roomID string, inp
 	return ebc.bus.Subscribe(SubjectRoomInput, func(msg *nats.Msg) {
 		var input common.InputCommand
 		if err := json.Unmarshal(msg.Data, &input); err != nil {
-			ebc.logger.Error("解析玩家输入事件失败", zap.Error(err))
+			ebc.logger.Error("解析玩家输入事件失败", "error", err)
 			return
 		}
 		// 从subject中提取roomID
 		roomID := extractRoomIDFromSubject(msg.Subject)
 		if err := handler(roomID, &input); err != nil {
 			ebc.logger.Error("处理玩家输入事件失败",
-				zap.String("room_id", roomID),
-				zap.String("player_id", input.PlayerID),
-				zap.Error(err),
+				"room_id", roomID,
+				"player_id", input.PlayerID,
+				"error", err,
 			)
 		}
 	})
@@ -277,7 +277,7 @@ func (ebc *EventBusComponent) SubscribeRoomFrame(roomID string, handler func(fra
 	return ebc.bus.Subscribe(subject, func(msg *nats.Msg) {
 		var data map[string]any
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			ebc.logger.Error("解析帧同步数据失败", zap.Error(err))
+			ebc.logger.Error("解析帧同步数据失败", "error", err)
 			return
 		}
 		frame := int64(data["frame"].(float64))
@@ -291,9 +291,9 @@ func (ebc *EventBusComponent) SubscribeRoomFrame(roomID string, handler func(fra
 		}
 		if err := handler(frame, inputs); err != nil {
 			ebc.logger.Error("处理帧同步数据失败",
-				zap.String("room_id", roomID),
-				zap.Int64("frame", frame),
-				zap.Error(err),
+				"room_id", roomID,
+				"frame", frame,
+				"error", err,
 			)
 		}
 	})
@@ -306,13 +306,13 @@ func (ebc *EventBusComponent) SubscribeMatchEnqueue(handler func(ticket *common.
 	return ebc.bus.Subscribe(SubjectMatchEnqueue, func(msg *nats.Msg) {
 		var ticket common.MatchTicket
 		if err := json.Unmarshal(msg.Data, &ticket); err != nil {
-			ebc.logger.Error("解析匹配入队事件失败", zap.Error(err))
+			ebc.logger.Error("解析匹配入队事件失败", "error", err)
 			return
 		}
 		if err := handler(&ticket); err != nil {
 			ebc.logger.Error("处理匹配入队事件失败",
-				zap.String("player_id", ticket.PlayerID),
-				zap.Error(err),
+				"player_id", ticket.PlayerID,
+				"error", err,
 			)
 		}
 	})
@@ -323,13 +323,13 @@ func (ebc *EventBusComponent) QueueSubscribeMatchEnqueue(queue string, handler f
 	return ebc.bus.QueueSubscribe(SubjectMatchEnqueue, queue, func(msg *nats.Msg) {
 		var ticket common.MatchTicket
 		if err := json.Unmarshal(msg.Data, &ticket); err != nil {
-			ebc.logger.Error("解析匹配入队事件失败", zap.Error(err))
+			ebc.logger.Error("解析匹配入队事件失败", "error", err)
 			return
 		}
 		if err := handler(&ticket); err != nil {
 			ebc.logger.Error("处理匹配入队事件失败",
-				zap.String("player_id", ticket.PlayerID),
-				zap.Error(err),
+				"player_id", ticket.PlayerID,
+				"error", err,
 			)
 		}
 	})
@@ -340,13 +340,13 @@ func (ebc *EventBusComponent) SubscribeMatchSuccess(handler func(result *common.
 	return ebc.bus.Subscribe(SubjectMatchSuccess, func(msg *nats.Msg) {
 		var result common.MatchResult
 		if err := json.Unmarshal(msg.Data, &result); err != nil {
-			ebc.logger.Error("解析匹配成功事件失败", zap.Error(err))
+			ebc.logger.Error("解析匹配成功事件失败", "error", err)
 			return
 		}
 		if err := handler(&result); err != nil {
 			ebc.logger.Error("处理匹配成功事件失败",
-				zap.String("room_id", result.RoomID),
-				zap.Error(err),
+				"room_id", result.RoomID,
+				"error", err,
 			)
 		}
 	})
@@ -359,13 +359,13 @@ func (ebc *EventBusComponent) SubscribePlayerLogin(handler func(player *common.P
 	return ebc.bus.Subscribe(SubjectPlayerLogin, func(msg *nats.Msg) {
 		var player common.Player
 		if err := json.Unmarshal(msg.Data, &player); err != nil {
-			ebc.logger.Error("解析玩家登录事件失败", zap.Error(err))
+			ebc.logger.Error("解析玩家登录事件失败", "error", err)
 			return
 		}
 		if err := handler(&player); err != nil {
 			ebc.logger.Error("处理玩家登录事件失败",
-				zap.String("player_id", player.ID),
-				zap.Error(err),
+				"player_id", player.ID,
+				"error", err,
 			)
 		}
 	})
@@ -376,14 +376,14 @@ func (ebc *EventBusComponent) SubscribePlayerLogout(handler func(playerID string
 	return ebc.bus.Subscribe(SubjectPlayerLogout, func(msg *nats.Msg) {
 		var data map[string]string
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			ebc.logger.Error("解析玩家登出事件失败", zap.Error(err))
+			ebc.logger.Error("解析玩家登出事件失败", "error", err)
 			return
 		}
 		playerID := data["player_id"]
 		if err := handler(playerID); err != nil {
 			ebc.logger.Error("处理玩家登出事件失败",
-				zap.String("player_id", playerID),
-				zap.Error(err),
+				"player_id", playerID,
+				"error", err,
 			)
 		}
 	})
@@ -394,13 +394,13 @@ func (ebc *EventBusComponent) SubscribePlayerUpdate(handler func(player *common.
 	return ebc.bus.Subscribe(SubjectPlayerUpdate, func(msg *nats.Msg) {
 		var player common.Player
 		if err := json.Unmarshal(msg.Data, &player); err != nil {
-			ebc.logger.Error("解析玩家更新事件失败", zap.Error(err))
+			ebc.logger.Error("解析玩家更新事件失败", "error", err)
 			return
 		}
 		if err := handler(&player); err != nil {
 			ebc.logger.Error("处理玩家更新事件失败",
-				zap.String("player_id", player.ID),
-				zap.Error(err),
+				"player_id", player.ID,
+				"error", err,
 			)
 		}
 	})

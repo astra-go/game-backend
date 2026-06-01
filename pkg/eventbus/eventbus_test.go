@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/astra-go/astra/log"
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 )
 
 // ========== Mock Conn ==========
@@ -103,7 +103,7 @@ func (m *mockConn) getPublished() []publishedMsg {
 func newEventBusWithMock(mc *mockConn) *EventBus {
 	return &EventBus{
 		conn:     mc,
-		logger:   zap.NewNop(),
+		logger:   log.Default(),
 		priQueue: &priorityQueue{},
 	}
 }
@@ -111,13 +111,13 @@ func newEventBusWithMock(mc *mockConn) *EventBus {
 // ========== Tests ==========
 
 func TestNewEventBus_BadURL(t *testing.T) {
-	logger := zap.NewNop()
+	logger := log.Default()
 	_, err := NewEventBus("nats://invalid-host:4222", logger)
 	assert.Error(t, err, "无效的NATS地址应该返回错误")
 }
 
 func TestEventBus_Publish_MarshalError(t *testing.T) {
-	eb := &EventBus{logger: zap.NewNop()}
+	eb := &EventBus{logger: log.Default()}
 	err := eb.Publish("test", make(chan int))
 	assert.Error(t, err, "不可序列化的数据应该返回错误")
 }
@@ -228,7 +228,7 @@ func TestEventBus_Request_Success(t *testing.T) {
 }
 
 func TestEventBus_Request_MarshalError(t *testing.T) {
-	eb := &EventBus{logger: zap.NewNop()}
+	eb := &EventBus{logger: log.Default()}
 	msg, err := eb.Request("test.subject", make(chan int), time.Second)
 	assert.Error(t, err)
 	assert.Nil(t, msg)

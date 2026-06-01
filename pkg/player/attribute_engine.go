@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 	"gorm.io/gorm"
 )
 
@@ -55,11 +55,11 @@ type Modifier struct {
 type AttributeEngine struct {
 	db     *gorm.DB
 	redis  *redis.Client
-	logger *zap.Logger
+	logger *log.Logger
 }
 
 // NewAttributeEngine 创建属性计算引擎
-func NewAttributeEngine(db *gorm.DB, redis *redis.Client, logger *zap.Logger) *AttributeEngine {
+func NewAttributeEngine(db *gorm.DB, redis *redis.Client, logger *log.Logger) *AttributeEngine {
 	return &AttributeEngine{
 		db:     db,
 		redis:  redis,
@@ -125,10 +125,10 @@ func (e *AttributeEngine) AddModifier(playerID string, mod AttributeModifier) er
 	e.clearAttrCache(playerID)
 
 	e.logger.Debug("添加修改器",
-		zap.String("player_id", playerID),
-		zap.String("modifier_id", mod.ID),
-		zap.String("attr", string(mod.AttrType)),
-		zap.Int32("value", mod.Value),
+		"player_id", playerID,
+		"modifier_id", mod.ID,
+		"attr", string(mod.AttrType),
+		"value", mod.Value,
 	)
 
 	return nil

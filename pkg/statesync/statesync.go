@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/astra-go/game-backend/pkg/common"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 )
 
 // StateSync 状态同步组件
@@ -20,7 +20,7 @@ type StateSync struct {
 	broadcastCh   chan *common.DeltaMessage
 	deltaCh       chan *common.EntityDelta
 	quitCh        chan struct{}
-	logger        *zap.Logger
+	logger        *log.Logger
 	
 	// 状态压缩
 	lastFullSync  int64
@@ -41,7 +41,7 @@ func NewStateSync(session common.RoomSessionInterface, hz int) *StateSync {
 		broadcastCh:     make(chan *common.DeltaMessage, 256),
 		deltaCh:         make(chan *common.EntityDelta, 1024),
 		quitCh:          make(chan struct{}),
-		logger:          zap.L().With(zap.String("component", "statesync")),
+		logger:          log.Default().WithFields("component", "statesync"),
 		fullSyncInterval: 300, // 每300帧全量同步一次
 		lastFullSync:    0,
 		sendCh:          make(chan []byte, 256),
@@ -56,7 +56,7 @@ func (ss *StateSync) Run() {
 	interval := time.Duration(1000/ss.hz) * time.Millisecond
 	ticker := time.NewTicker(interval)
 	
-	ss.logger.Info("状态同步启动", zap.Int("hz", ss.hz))
+	ss.logger.Info("状态同步启动", "hz", ss.hz)
 	
 	defer func() {
 		ticker.Stop()
@@ -190,7 +190,7 @@ func (ss *StateSync) broadcastDelta(frame int64, deltas []common.EntityDelta) {
 	
 	data, err := json.Marshal(msg)
 	if err != nil {
-		ss.logger.Error("增量序列化失败", zap.Error(err))
+		ss.logger.Error("增量序列化失败", "error", err)
 		return
 	}
 	
@@ -204,8 +204,8 @@ func (ss *StateSync) broadcastDelta(frame int64, deltas []common.EntityDelta) {
 	}
 	
 	ss.logger.Debug("状态增量广播",
-		zap.Int64("frame", frame),
-		zap.Int("delta_count", len(deltas)),
+		"frame", frame,
+		"delta_count", len(deltas),
 	)
 }
 
@@ -227,7 +227,7 @@ func (ss *StateSync) broadcastFullSync(frame int64) {
 	
 	data, err := json.Marshal(msg)
 	if err != nil {
-		ss.logger.Error("全量同步序列化失败", zap.Error(err))
+		ss.logger.Error("全量同步序列化失败", "error", err)
 		return
 	}
 	_ = data
@@ -235,8 +235,8 @@ func (ss *StateSync) broadcastFullSync(frame int64) {
 	// nats.Publish(fmt.Sprintf("room.%s.full_sync", ss.session.GetRoomID()), data)
 	
 	ss.logger.Info("全量状态同步",
-		zap.Int64("frame", frame),
-		zap.Int("entity_count", len(allStates)),
+		"frame", frame,
+		"entity_count", len(allStates),
 	)
 }
 
@@ -292,7 +292,7 @@ func (ss *StateSync) ApplySnapshot(snapshot *common.GameSnapshot) {
 		_ = inputs
 	}
 	
-	ss.logger.Info("应用帧同步快照", zap.Int64("frame", snapshot.Frame))
+	ss.logger.Info("应用帧同步快照", "frame", snapshot.Frame)
 }
 
 // Pause 暂停状态同步

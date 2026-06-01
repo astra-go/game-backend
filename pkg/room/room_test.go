@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/pkg/common"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 )
 
 // ========== Mock 实现 ==========
@@ -62,8 +62,8 @@ func (m *mockNATSClient) getPublished() []publishedMsg {
 
 // ========== 辅助函数 ==========
 
-func newTestLogger() *zap.Logger {
-	logger, _ := zap.NewDevelopment()
+func newTestLogger() *log.Logger {
+	logger := log.Default()
 	return logger
 }
 

@@ -31,7 +31,7 @@
 import (
     "game-backend/pkg/inventory"
     "github.com/redis/go-redis/v9"
-    "go.uber.org/zap"
+	"github.com/astra-go/astra/log"
     "gorm.io/gorm"
 )
 

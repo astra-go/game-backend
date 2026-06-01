@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/astra-go/astra/log"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -93,14 +93,14 @@ const invCacheTTL = 5 * time.Minute
 type InventoryComponent struct {
 	db              *gorm.DB
 	redis           *redis.Client
-	logger          *zap.Logger
+	logger          *log.Logger
 	effectContext   *EffectContext
 	playerComponent PlayerComponentInterface
 	attributeEngine AttributeEngineInterface
 }
 
 // NewInventoryComponent 创建背包组件
-func NewInventoryComponent(db *gorm.DB, redis *redis.Client, logger *zap.Logger) *InventoryComponent {
+func NewInventoryComponent(db *gorm.DB, redis *redis.Client, logger *log.Logger) *InventoryComponent {
 	return &InventoryComponent{
 		db:     db,
 		redis:  redis,
@@ -243,9 +243,9 @@ func (ic *InventoryComponent) AddItem(playerID string, itemID string, quantity i
 	ic.invalidateInvCache(playerID)
 
 	ic.logger.Info("添加物品",
-		zap.String("player_id", playerID),
-		zap.String("item_id", itemID),
-		zap.Int32("quantity", quantity),
+		"player_id", playerID,
+		"item_id", itemID,
+		"quantity", quantity,
 	)
 
 	return lastSlot, nil
@@ -274,9 +274,9 @@ func (ic *InventoryComponent) RemoveItem(playerID string, slotIndex int32, quant
 	ic.invalidateInvCache(playerID)
 
 	ic.logger.Info("移除物品",
-		zap.String("player_id", playerID),
-		zap.Int32("slot_index", slotIndex),
-		zap.Int32("quantity", quantity),
+		"player_id", playerID,
+		"slot_index", slotIndex,
+		"quantity", quantity,
 	)
 
 	return nil
@@ -318,10 +318,10 @@ func (ic *InventoryComponent) UseItem(playerID string, slotIndex int32) (*Effect
 		result, err := ApplyEffect(effect, playerID, ic.effectContext)
 		if err != nil {
 			ic.logger.Error("应用效果失败",
-				zap.String("player_id", playerID),
-				zap.String("item_id", slot.ItemID),
-				zap.String("effect_type", string(effect.Type)),
-				zap.Error(err),
+				"player_id", playerID,
+				"item_id", slot.ItemID,
+				"effect_type", string(effect.Type),
+				"error", err,
 			)
 			continue
 		}
@@ -351,9 +351,9 @@ func (ic *InventoryComponent) UseItem(playerID string, slotIndex int32) (*Effect
 	ic.invalidateInvCache(playerID)
 
 	ic.logger.Info("使用物品",
-		zap.String("player_id", playerID),
-		zap.String("item_id", slot.ItemID),
-		zap.Int32("slot_index", slotIndex),
+		"player_id", playerID,
+		"item_id", slot.ItemID,
+		"slot_index", slotIndex,
 	)
 
 	return combinedResult, nil
@@ -411,9 +411,9 @@ func (ic *InventoryComponent) EquipItem(playerID string, slotIndex int32) error 
 	ic.invalidateInvCache(playerID)
 
 	ic.logger.Info("装备物品",
-		zap.String("player_id", playerID),
-		zap.String("item_id", slot.ItemID),
-		zap.Int32("equipment_slot_id", equipSlotID),
+		"player_id", playerID,
+		"item_id", slot.ItemID,
+		"equipment_slot_id", equipSlotID,
 	)
 
 	return nil
@@ -439,8 +439,8 @@ func (ic *InventoryComponent) UnequipItem(playerID string, equipmentSlotID int32
 	ic.invalidateInvCache(playerID)
 
 	ic.logger.Info("卸下装备",
-		zap.String("player_id", playerID),
-		zap.Int32("equipment_slot_id", equipmentSlotID),
+		"player_id", playerID,
+		"equipment_slot_id", equipmentSlotID,
 	)
 
 	return nil
@@ -505,8 +505,8 @@ func (ic *InventoryComponent) RegisterItemTemplate(template ItemTemplate) error 
 	ic.redis.Del(invCtx, templateCachePrefix+template.ItemID)
 
 	ic.logger.Info("注册物品模板",
-		zap.String("item_id", template.ItemID),
-		zap.String("name", template.Name),
+		"item_id", template.ItemID,
+		"name", template.Name,
 	)
 
 	return nil
@@ -631,11 +631,11 @@ func (ic *InventoryComponent) checkRequirements(playerID string, template *ItemT
 func (ic *InventoryComponent) setInvCache(playerID string, slots []InventorySlot) {
 	data, err := json.Marshal(slots)
 	if err != nil {
-		ic.logger.Warn("序列化背包缓存失败", zap.Error(err))
+		ic.logger.Warn("序列化背包缓存失败", "error", err)
 		return
 	}
 	if err := ic.redis.Set(invCtx, invCachePrefix+playerID, data, invCacheTTL).Err(); err != nil {
-		ic.logger.Warn("写入背包缓存失败", zap.Error(err))
+		ic.logger.Warn("写入背包缓存失败", "error", err)
 	}
 }
 

@@ -5,21 +5,20 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/astra-go/astra"
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/pkg/middleware"
 	"github.com/astra-go/game-backend/pkg/player"
-	"github.com/astra-go/astra"
-	"go.uber.org/zap"
 )
-
 
 // PlayerAPI 玩家API路由组
 type PlayerAPI struct {
 	pc     *player.PlayerComponent
-	logger *zap.Logger
+	logger *log.Logger
 }
 
 // NewPlayerAPI 创建玩家API实例
-func NewPlayerAPI(pc *player.PlayerComponent, logger *zap.Logger) *PlayerAPI {
+func NewPlayerAPI(pc *player.PlayerComponent, logger *log.Logger) *PlayerAPI {
 	return &PlayerAPI{
 		pc:     pc,
 		logger: logger,
@@ -54,13 +53,13 @@ func (api *PlayerAPI) Register(c *astra.Ctx) error {
 	var req player.RegisterRequest
 
 	if err := c.BindJSON(&req); err != nil {
-		api.logger.Warn("注册请求参数解析失败", zap.Error(err))
+		api.logger.Warn("注册请求参数解析失败", "error", err)
 		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
 	}
 
 	p, err := api.pc.Register(&req)
 	if err != nil {
-		api.logger.Warn("注册失败", zap.Error(err))
+		api.logger.Warn("注册失败", "error", err)
 		return ResponseError(c, http.StatusBadRequest, err.Error())
 	}
 
@@ -77,7 +76,7 @@ func (api *PlayerAPI) Login(c *astra.Ctx) error {
 	var req player.LoginRequest
 
 	if err := c.BindJSON(&req); err != nil {
-		api.logger.Warn("登录请求参数解析失败", zap.Error(err))
+		api.logger.Warn("登录请求参数解析失败", "error", err)
 		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
 	}
 
@@ -88,7 +87,7 @@ func (api *PlayerAPI) Login(c *astra.Ctx) error {
 
 	resp, err := api.pc.Login(&req)
 	if err != nil {
-		api.logger.Warn("登录失败", zap.String("username", req.Username), zap.Error(err))
+		api.logger.Warn("登录失败", "username", req.Username, "error", err)
 		return ResponseError(c, http.StatusUnauthorized, err.Error())
 	}
 
@@ -106,7 +105,7 @@ func (api *PlayerAPI) GetProfile(c *astra.Ctx) error {
 
 	p, err := api.pc.GetByID(pid)
 	if err != nil {
-		api.logger.Warn("获取玩家信息失败", zap.String("player_id", pid), zap.Error(err))
+		api.logger.Warn("获取玩家信息失败", "player_id", pid, "error", err)
 		return ResponseError(c, http.StatusNotFound, "玩家不存在")
 	}
 
@@ -128,7 +127,7 @@ func (api *PlayerAPI) UpdateProfile(c *astra.Ctx) error {
 	}
 
 	if err := c.BindJSON(&req); err != nil {
-		api.logger.Warn("更新资料请求参数解析失败", zap.Error(err))
+		api.logger.Warn("更新资料请求参数解析失败", "error", err)
 		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
 	}
 
@@ -144,7 +143,7 @@ func (api *PlayerAPI) UpdateProfile(c *astra.Ctx) error {
 
 	// 保存到数据库
 	if err := api.pc.UpdatePlayer(p); err != nil {
-		api.logger.Error("更新玩家资料失败", zap.Error(err))
+		api.logger.Error("更新玩家资料失败", "error", err)
 		return ResponseError(c, http.StatusInternalServerError, "更新失败")
 	}
 
@@ -165,13 +164,13 @@ func (api *PlayerAPI) Logout(c *astra.Ctx) error {
 	}
 
 	if err := c.BindJSON(&req); err != nil {
-		api.logger.Warn("登出请求参数解析失败", zap.Error(err))
+		api.logger.Warn("登出请求参数解析失败", "error", err)
 		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
 	}
 
 	err := api.pc.Logout(pid, req.DeviceType)
 	if err != nil {
-		api.logger.Error("登出失败", zap.String("player_id", pid), zap.Error(err))
+		api.logger.Error("登出失败", "player_id", pid, "error", err)
 		return ResponseError(c, http.StatusInternalServerError, "登出失败")
 	}
 
@@ -189,7 +188,7 @@ func (api *PlayerAPI) GetSessions(c *astra.Ctx) error {
 
 	sessions, err := api.pc.GetActiveSessions(pid)
 	if err != nil {
-		api.logger.Error("获取会话列表失败", zap.String("player_id", pid), zap.Error(err))
+		api.logger.Error("获取会话列表失败", "player_id", pid, "error", err)
 		return ResponseError(c, http.StatusInternalServerError, "获取会话列表失败")
 	}
 
@@ -210,13 +209,13 @@ func (api *PlayerAPI) KickDevice(c *astra.Ctx) error {
 	}
 
 	if err := c.BindJSON(&req); err != nil {
-		api.logger.Warn("踢设备请求参数解析失败", zap.Error(err))
+		api.logger.Warn("踢设备请求参数解析失败", "error", err)
 		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
 	}
 
 	err := api.pc.KickDevice(pid, req.DeviceType)
 	if err != nil {
-		api.logger.Error("踢设备失败", zap.String("player_id", pid), zap.Error(err))
+		api.logger.Error("踢设备失败", "player_id", pid, "error", err)
 		return ResponseError(c, http.StatusInternalServerError, "踢设备失败")
 	}
 
@@ -236,7 +235,7 @@ func (api *PlayerAPI) Leaderboard(c *astra.Ctx) error {
 
 	players, err := api.pc.GetLeaderboard(limit)
 	if err != nil {
-		api.logger.Error("获取排行榜失败", zap.Error(err))
+		api.logger.Error("获取排行榜失败", "error", err)
 		return ResponseError(c, http.StatusInternalServerError, "获取排行榜失败")
 	}
 
@@ -253,7 +252,7 @@ func (api *PlayerAPI) GetPlayerByID(c *astra.Ctx) error {
 
 	p, err := api.pc.GetByID(id)
 	if err != nil {
-		api.logger.Warn("获取玩家信息失败", zap.String("id", id), zap.Error(err))
+		api.logger.Warn("获取玩家信息失败", "id", id, "error", err)
 		return ResponseError(c, http.StatusNotFound, "玩家不存在")
 	}
 
@@ -275,7 +274,7 @@ func (api *PlayerAPI) ChangePassword(c *astra.Ctx) error {
 	}
 
 	if err := c.BindJSON(&req); err != nil {
-		api.logger.Warn("修改密码请求参数解析失败", zap.Error(err))
+		api.logger.Warn("修改密码请求参数解析失败", "error", err)
 		return ResponseError(c, http.StatusBadRequest, "请求参数错误")
 	}
 
@@ -285,7 +284,7 @@ func (api *PlayerAPI) ChangePassword(c *astra.Ctx) error {
 
 	err := api.pc.ChangePassword(pid, req.OldPassword, req.NewPassword)
 	if err != nil {
-		api.logger.Warn("修改密码失败", zap.String("player_id", pid), zap.Error(err))
+		api.logger.Warn("修改密码失败", "player_id", pid, "error", err)
 		return ResponseError(c, http.StatusBadRequest, err.Error())
 	}
 

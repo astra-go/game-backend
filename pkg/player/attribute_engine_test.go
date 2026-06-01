@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/astra-go/astra/log"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -25,7 +25,7 @@ func setupEngineTest(t *testing.T) (*AttributeEngine, *gorm.DB, *miniredis.Minir
 		Addr: mr.Addr(),
 	})
 
-	logger := zap.NewNop()
+	logger := log.Default()
 	engine := NewAttributeEngine(db, rdb, logger)
 	err = engine.Init()
 	assert.NoError(t, err)

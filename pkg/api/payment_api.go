@@ -6,20 +6,20 @@ import (
 	"strings"
 
 	"github.com/astra-go/astra"
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/internal/services"
 	"github.com/astra-go/game-backend/pkg/payment"
-	"go.uber.org/zap"
 )
 
 // PaymentAPI 支付API
 type PaymentAPI struct {
 	shopService   *services.ShopService
 	paymentConfig *payment.Config
-	logger        *zap.Logger
+	logger        *log.Logger
 }
 
 // NewPaymentAPI 创建支付API
-func NewPaymentAPI(shopService *services.ShopService, cfg *payment.Config, logger *zap.Logger) *PaymentAPI {
+func NewPaymentAPI(shopService *services.ShopService, cfg *payment.Config, logger *log.Logger) *PaymentAPI {
 	return &PaymentAPI{
 		shopService:   shopService,
 		paymentConfig: cfg,
@@ -77,7 +77,7 @@ func (api *PaymentAPI) CreatePayment(c *astra.Ctx) error {
 	ctx := c.Request().Context()
 	resp, err := api.shopService.CreatePayment(ctx, req.OrderID, channel, clientIP)
 	if err != nil {
-		api.logger.Error("创建支付失败", zap.String("order_id", req.OrderID), zap.Error(err))
+		api.logger.Error("创建支付失败", "order_id", req.OrderID, "error", err)
 		return ResponseError(c, http.StatusInternalServerError, "创建支付失败: "+err.Error())
 	}
 
@@ -254,7 +254,7 @@ func (api *PaymentAPI) Refund(c *astra.Ctx) error {
 	ctx := c.Request().Context()
 	resp, err := api.shopService.RefundPayment(ctx, req.OrderID, req.Reason, req.OperatorID)
 	if err != nil {
-		api.logger.Error("退款失败", zap.String("order_id", req.OrderID), zap.Error(err))
+		api.logger.Error("退款失败", "order_id", req.OrderID, "error", err)
 		return ResponseError(c, http.StatusInternalServerError, "退款失败: "+err.Error())
 	}
 

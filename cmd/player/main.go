@@ -7,14 +7,14 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/astra-go/astra"
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/pkg/api"
 	"github.com/astra-go/game-backend/pkg/config"
 	"github.com/astra-go/game-backend/pkg/friend"
 	"github.com/astra-go/game-backend/pkg/middleware"
 	"github.com/astra-go/game-backend/pkg/player"
-	"github.com/astra-go/astra"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -27,8 +27,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	logger := log.Default()
 
 	slog.Info("启动玩家服务...")
 

@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/pkg/natsclient"
 	"github.com/nats-io/nats.go"
-	"go.uber.org/zap"
 )
 
 // Priority 事件优先级
@@ -78,20 +78,20 @@ type Conn interface {
 // EventBus 事件总线封装（基于NATS）
 type EventBus struct {
 	conn     Conn           // NATS连接（接口，支持mock）
-	logger   *zap.Logger
+	logger   *log.Logger
 	subs     sync.Map     // subject -> subscription
 	priQueue *priorityQueue // 优先级队列
 	queueMu  sync.Mutex    // 队列操作锁
 }
 
 // NewEventBus 创建事件总线
-func NewEventBus(url string, logger *zap.Logger) (*EventBus, error) {
+func NewEventBus(url string, logger *log.Logger) (*EventBus, error) {
 	opts := []nats.Option{
 		nats.Name("AstraGame-EventBus"),
 		nats.ReconnectWait(2 * time.Second),
 		nats.MaxReconnects(10),
 		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
-			logger.Error("NATS断开连接", zap.Error(err))
+			logger.Error("NATS断开连接", "error", err)
 		}),
 		nats.ReconnectHandler(func(nc *nats.Conn) {
 			logger.Info("NATS重新连接成功")
@@ -112,7 +112,7 @@ func NewEventBus(url string, logger *zap.Logger) (*EventBus, error) {
 
 // NewEventBusWithClient 创建事件总线（使用 natsclient.Client）
 // 适用于统一使用 natsclient 的场景。底层 conn 仍为 *nats.Conn（通过 client.Raw() 获取）。
-func NewEventBusWithClient(url string, logger *zap.Logger) (*EventBus, error) {
+func NewEventBusWithClient(url string, logger *log.Logger) (*EventBus, error) {
 	client, err := natsclient.New(url)
 	if err != nil {
 		return nil, fmt.Errorf("创建NATS客户端失败: %w", err)
@@ -137,15 +137,15 @@ func (eb *EventBus) Publish(subject string, data interface{}) error {
 	}
 	if errPub != nil {
 		eb.logger.Error("发布事件失败",
-			zap.String("subject", subject),
-			zap.Error(errPub),
+			"subject", subject,
+			"error", errPub,
 		)
 		return errPub
 	}
 
 	eb.logger.Debug("事件发布成功",
-		zap.String("subject", subject),
-		zap.Int("size", len(payload)),
+		"subject", subject,
+		"size", len(payload),
 	)
 
 	return nil
@@ -170,9 +170,9 @@ func (eb *EventBus) PublishWithPriority(subject string, data interface{}, priori
 	eb.queueMu.Unlock()
 
 	eb.logger.Debug("优先级事件入队",
-		zap.String("subject", subject),
-		zap.Int("priority", int(priority)),
-		zap.Int("queue_size", eb.priQueue.Len()),
+		"subject", subject,
+		"priority", int(priority),
+		"queue_size", eb.priQueue.Len(),
 	)
 
 	// 异步处理优先级队列
@@ -195,8 +195,8 @@ func (eb *EventBus) processPriorityQueue() {
 		}
 		if err != nil {
 			eb.logger.Error("优先级事件发布失败",
-				zap.String("subject", event.subject),
-				zap.Error(err),
+				"subject", event.subject,
+				"error", err,
 			)
 		}
 	}
@@ -208,8 +208,8 @@ func (eb *EventBus) Subscribe(subject string, handler func(msg *nats.Msg)) error
 		defer func() {
 			if r := recover(); r != nil {
 				eb.logger.Error("消息处理panic",
-					zap.String("subject", subject),
-					zap.Any("panic", r),
+					"subject", subject,
+					"panic", r,
 				)
 			}
 		}()
@@ -221,7 +221,7 @@ func (eb *EventBus) Subscribe(subject string, handler func(msg *nats.Msg)) error
 		return fmt.Errorf("订阅失败: %w", err)
 	}
 
-	eb.logger.Info("订阅成功", zap.String("subject", subject))
+	eb.logger.Info("订阅成功", "subject", subject)
 
 	return nil
 }
@@ -232,9 +232,9 @@ func (eb *EventBus) QueueSubscribe(subject, queue string, handler func(msg *nats
 		defer func() {
 			if r := recover(); r != nil {
 				eb.logger.Error("消息处理panic",
-					zap.String("subject", subject),
-					zap.String("queue", queue),
-					zap.Any("panic", r),
+					"subject", subject,
+					"queue", queue,
+					"panic", r,
 				)
 			}
 		}()
@@ -247,8 +247,8 @@ func (eb *EventBus) QueueSubscribe(subject, queue string, handler func(msg *nats
 	}
 
 	eb.logger.Info("队列订阅成功",
-		zap.String("subject", subject),
-		zap.String("queue", queue),
+		"subject", subject,
+		"queue", queue,
 	)
 
 	return nil

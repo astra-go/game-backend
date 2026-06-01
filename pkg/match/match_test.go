@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/astra-go/astra/log"
+	"github.com/astra-go/game-backend/pkg/common"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
-	"github.com/astra-go/game-backend/pkg/common"
 )
 
 // MockNATSClient mock NATS客户端
@@ -50,7 +50,7 @@ func setupTestMatchComponent(t *testing.T) (*MatchComponent, *miniredis.Miniredi
 	})
 	
 	natsClient := &MockNATSClient{}
-	logger, _ := zap.NewDevelopment()
+	logger := log.Default()
 	
 	config := DefaultMatchConfig()
 	

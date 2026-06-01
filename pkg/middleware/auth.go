@@ -8,7 +8,7 @@ import (
 	"github.com/astra-go/game-backend/pkg/common"
 	"github.com/astra-go/astra"
 	"github.com/golang-jwt/jwt/v5"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 )
 
 // 上下文键，用于存储认证信息
@@ -26,7 +26,7 @@ type response struct {
 // AuthMiddleware JWT认证中间件
 // 从Header(Authorization: Bearer xxx)或Query参数(token=xxx)提取token
 // 验证有效性后将playerID和username存入context
-func AuthMiddleware(logger *zap.Logger) astra.HandlerFunc {
+func AuthMiddleware(logger *log.Logger) astra.HandlerFunc {
 	return func(c *astra.Ctx) error {
 		var tokenStr string
 
@@ -59,13 +59,13 @@ func AuthMiddleware(logger *zap.Logger) astra.HandlerFunc {
 		if err != nil {
 			// 区分过期和无效
 			if errors.Is(err, jwt.ErrTokenExpired) {
-				logger.Warn("token已过期", zap.Error(err))
+				logger.Warn("token已过期", "error", err)
 				return c.JSON(http.StatusUnauthorized, response{
 					Code: 401,
 					Msg:  "token已过期",
 				})
 			}
-			logger.Warn("token无效", zap.Error(err))
+			logger.Warn("token无效", "error", err)
 			return c.JSON(http.StatusUnauthorized, response{
 				Code: 401,
 				Msg:  "未授权",

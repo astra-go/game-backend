@@ -7,7 +7,7 @@ import (
 	"github.com/astra-go/game-backend/internal/models"
 	"github.com/astra-go/game-backend/internal/services"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 	"gorm.io/gorm"
 )
 
@@ -16,11 +16,11 @@ type ActivityAPI struct {
 	db              *gorm.DB
 	redis           *redis.Client
 	activityService *services.ActivityService
-	logger          *zap.Logger
+	logger          *log.Logger
 }
 
 // NewActivityAPI 创建活动API
-func NewActivityAPI(db *gorm.DB, redisClient *redis.Client, logger *zap.Logger) *ActivityAPI {
+func NewActivityAPI(db *gorm.DB, redisClient *redis.Client, logger *log.Logger) *ActivityAPI {
 	activitySvc := services.NewActivityService(db, redisClient, nil)
 	
 	return &ActivityAPI{
@@ -41,7 +41,7 @@ func (a *ActivityAPI) RegisterRoutes(router any) {
 func (a *ActivityAPI) GetActiveActivities(c *astra.Ctx) error {
 	activities, err := a.activityService.ListActiveActivities(c.Request().Context())
 	if err != nil {
-		a.logger.Error("获取活动列表失败", zap.Error(err))
+		a.logger.Error("获取活动列表失败", "error", err)
 		return ResponseError(c, 500, "获取活动列表失败")
 	}
 	return ResponseOK(c, activities)

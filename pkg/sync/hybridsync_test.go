@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/pkg/common"
 	"github.com/astra-go/game-backend/pkg/framesync"
 	"github.com/astra-go/game-backend/pkg/statesync"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"go.uber.org/zap"
 )
 
 // ========== Mock RoomSessionInterface ==========
@@ -42,7 +42,7 @@ func (m *MockRoomSession) IsRunning() bool {
 // ========== Helper ==========
 
 func newTestHybridSync(session common.RoomSessionInterface) *HybridSync {
-	return NewHybridSync(session, zap.NewNop())
+	return NewHybridSync(session, log.Default())
 }
 
 // setupMockSession 配置 mock 的默认返回值（用于帧同步/状态同步内部调用）

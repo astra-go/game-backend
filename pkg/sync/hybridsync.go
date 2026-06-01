@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/pkg/common"
 	"github.com/astra-go/game-backend/pkg/framesync"
 	"github.com/astra-go/game-backend/pkg/statesync"
@@ -21,7 +21,7 @@ type HybridSync struct {
 	currentMode     common.SyncMode
 	transitioning   bool
 	lastTransition  time.Time
-	logger          *zap.Logger
+	logger          *log.Logger
 	
 	// 混合同步配置
 	lockstepFrames  int64  // Lockstep 持续帧数
@@ -30,14 +30,14 @@ type HybridSync struct {
 }
 
 // NewHybridSync 创建混合同步管理器
-func NewHybridSync(session common.RoomSessionInterface, logger *zap.Logger) *HybridSync {
+func NewHybridSync(session common.RoomSessionInterface, logger *log.Logger) *HybridSync {
 	return &HybridSync{
 		session:         session,
 		currentMode:     common.SyncModeFrame, // 默认从帧同步开始
 		lockstepFrames:  300,  // 5秒@60fps
 		stateSyncFrames: 60,   // 3秒@20fps
 		frameCount:      0,
-		logger:          logger.With(zap.String("component", "hybridsync")),
+		logger:          logger.WithFields("component", "hybridsync"),
 	}
 }
 
@@ -46,7 +46,7 @@ func (hs *HybridSync) Start() error {
 	hs.mu.Lock()
 	defer hs.mu.Unlock()
 	
-	hs.logger.Info("启动混合同步", zap.String("initial_mode", string(hs.currentMode)))
+	hs.logger.Info("启动混合同步", "initial_mode", string(hs.currentMode))
 	
 	// 启动帧同步
 	hs.frameSync = framesync.NewFrameSync(hs.session, 16) // 60fps
@@ -122,8 +122,8 @@ func (hs *HybridSync) switchMode() error {
 		hs.stateSync.Resume()
 		
 		hs.logger.Info("切换到状态同步",
-			zap.String("from", string(oldMode)),
-			zap.String("to", string(hs.currentMode)),
+			"from", string(oldMode),
+			"to", string(hs.currentMode),
 		)
 		
 	} else {
@@ -141,8 +141,8 @@ func (hs *HybridSync) switchMode() error {
 		hs.frameSync.Resume()
 		
 		hs.logger.Info("切换到帧同步",
-			zap.String("from", string(oldMode)),
-			zap.String("to", string(hs.currentMode)),
+			"from", string(oldMode),
+			"to", string(hs.currentMode),
 		)
 	}
 	
@@ -162,7 +162,7 @@ func (hs *HybridSync) broadcastModeSwitch(newMode common.SyncMode) {
 	// 通过 NATS 广播
 	// nats.Publish(fmt.Sprintf("room.%s.mode_switch", hs.session.GetRoomID()), data)
 	
-	hs.logger.Debug("广播模式切换", zap.String("new_mode", string(newMode)))
+	hs.logger.Debug("广播模式切换", "new_mode", string(newMode))
 }
 
 // SubmitInput 提交玩家输入（根据当前模式路由）

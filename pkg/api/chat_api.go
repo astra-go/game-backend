@@ -9,7 +9,7 @@ import (
 	"github.com/astra-go/astra"
 	"github.com/astra-go/game-backend/internal/models"
 	"github.com/astra-go/game-backend/pkg/middleware"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 	"gorm.io/gorm"
 )
 
@@ -31,11 +31,11 @@ type ChatServiceInterface interface {
 // ChatAPI 聊天系统API
 type ChatAPI struct {
 	chatService ChatServiceInterface
-	logger     *zap.Logger
+	logger     *log.Logger
 }
 
 // NewChatAPI 创建聊天API实例
-func NewChatAPI(chatService ChatServiceInterface, logger *zap.Logger) *ChatAPI {
+func NewChatAPI(chatService ChatServiceInterface, logger *log.Logger) *ChatAPI {
 	return &ChatAPI{
 		chatService: chatService,
 		logger:      logger,
@@ -105,9 +105,9 @@ func (api *ChatAPI) SendPrivateMessage(c *astra.Ctx) error {
 	ctx := c.Request().Context()
 	if err := api.chatService.SendMessage(ctx, message); err != nil {
 		api.logger.Warn("发送私聊消息失败",
-			zap.Uint64("from_player", playerID),
-			zap.Uint64("to_player", req.ToPlayerID),
-			zap.Error(err),
+			"from_player", playerID,
+			"to_player", req.ToPlayerID,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusBadRequest, err.Error())
 	}
@@ -155,9 +155,9 @@ func (api *ChatAPI) GetPrivateMessages(c *astra.Ctx) error {
 	messages, err := api.chatService.GetPrivateMessages(ctx, playerID, targetID, limit)
 	if err != nil {
 		api.logger.Error("获取私聊消息失败",
-			zap.Uint64("player_id", playerID),
-			zap.Uint64("target_id", targetID),
-			zap.Error(err),
+			"player_id", playerID,
+			"target_id", targetID,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusInternalServerError, "获取消息失败")
 	}
@@ -203,9 +203,9 @@ func (api *ChatAPI) SendGuildMessage(c *astra.Ctx) error {
 	ctx := c.Request().Context()
 	if err := api.chatService.SendMessage(ctx, message); err != nil {
 		api.logger.Warn("发送公会消息失败",
-			zap.Uint64("from_player", playerID),
-			zap.Uint64("guild_id", req.GuildID),
-			zap.Error(err),
+			"from_player", playerID,
+			"guild_id", req.GuildID,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusBadRequest, err.Error())
 	}
@@ -243,8 +243,8 @@ func (api *ChatAPI) GetGuildMessages(c *astra.Ctx) error {
 	messages, err := api.chatService.GetGuildMessages(ctx, guildID, limit)
 	if err != nil {
 		api.logger.Error("获取公会消息失败",
-			zap.Uint64("guild_id", guildID),
-			zap.Error(err),
+			"guild_id", guildID,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusInternalServerError, "获取消息失败")
 	}
@@ -288,8 +288,8 @@ func (api *ChatAPI) SendWorldMessage(c *astra.Ctx) error {
 	ctx := c.Request().Context()
 	if err := api.chatService.SendMessage(ctx, message); err != nil {
 		api.logger.Warn("发送世界消息失败",
-			zap.Uint64("from_player", playerID),
-			zap.Error(err),
+			"from_player", playerID,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusBadRequest, err.Error())
 	}
@@ -320,7 +320,7 @@ func (api *ChatAPI) GetWorldMessages(c *astra.Ctx) error {
 		Find(&messages).Error
 
 	if err != nil {
-		api.logger.Error("获取世界消息失败", zap.Error(err))
+		api.logger.Error("获取世界消息失败", "error", err)
 		return ResponseError(c, http.StatusInternalServerError, "获取消息失败")
 	}
 
@@ -370,9 +370,9 @@ func (api *ChatAPI) SendRoomMessage(c *astra.Ctx) error {
 	ctx := c.Request().Context()
 	if err := api.chatService.SendMessage(ctx, message); err != nil {
 		api.logger.Warn("发送房间消息失败",
-			zap.Uint64("from_player", playerID),
-			zap.Uint64("room_id", req.RoomID),
-			zap.Error(err),
+			"from_player", playerID,
+			"room_id", req.RoomID,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusBadRequest, err.Error())
 	}
@@ -410,8 +410,8 @@ func (api *ChatAPI) GetRoomMessages(c *astra.Ctx) error {
 	messages, err := api.chatService.GetRoomMessages(ctx, roomID, limit)
 	if err != nil {
 		api.logger.Error("获取房间消息失败",
-			zap.Uint64("room_id", roomID),
-			zap.Error(err),
+			"room_id", roomID,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusInternalServerError, "获取消息失败")
 	}
@@ -448,10 +448,10 @@ func (api *ChatAPI) MarkMessagesAsRead(c *astra.Ctx) error {
 	ctx := c.Request().Context()
 	if err := api.chatService.MarkMessagesAsRead(ctx, playerID, req.TargetID, req.TargetType); err != nil {
 		api.logger.Error("标记消息已读失败",
-			zap.Uint64("player_id", playerID),
-			zap.Uint64("target_id", req.TargetID),
-			zap.String("target_type", req.TargetType),
-			zap.Error(err),
+			"player_id", playerID,
+			"target_id", req.TargetID,
+			"target_type", req.TargetType,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusInternalServerError, "标记已读失败")
 	}
@@ -477,8 +477,8 @@ func (api *ChatAPI) GetUnreadCount(c *astra.Ctx) error {
 	count, err := api.chatService.GetUnreadCount(ctx, playerID)
 	if err != nil {
 		api.logger.Error("获取未读消息数量失败",
-			zap.Uint64("player_id", playerID),
-			zap.Error(err),
+			"player_id", playerID,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusInternalServerError, "获取未读消息失败")
 	}
@@ -511,9 +511,9 @@ func (api *ChatAPI) MutePlayer(c *astra.Ctx) error {
 	ctx := c.Request().Context()
 	if err := api.chatService.MutePlayer(ctx, req.PlayerID, req.Duration); err != nil {
 		api.logger.Error("禁言玩家失败",
-			zap.Uint64("target_player_id", req.PlayerID),
-			zap.Duration("duration", req.Duration),
-			zap.Error(err),
+			"target_player_id", req.PlayerID,
+			"duration", req.Duration,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusInternalServerError, "禁言失败")
 	}
@@ -546,8 +546,8 @@ func (api *ChatAPI) UnmutePlayer(c *astra.Ctx) error {
 	ctx := c.Request().Context()
 	if err := api.chatService.UnmutePlayer(ctx, targetID); err != nil {
 		api.logger.Error("解除禁言失败",
-			zap.Uint64("target_player_id", targetID),
-			zap.Error(err),
+			"target_player_id", targetID,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusInternalServerError, "解除禁言失败")
 	}
@@ -573,8 +573,8 @@ func (api *ChatAPI) GetMuteStatus(c *astra.Ctx) error {
 	isMuted, err := api.chatService.IsPlayerMuted(ctx, targetID)
 	if err != nil {
 		api.logger.Error("获取禁言状态失败",
-			zap.Uint64("target_player_id", targetID),
-			zap.Error(err),
+			"target_player_id", targetID,
+			"error", err,
 		)
 		return ResponseError(c, http.StatusInternalServerError, "获取禁言状态失败")
 	}

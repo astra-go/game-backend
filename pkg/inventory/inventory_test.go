@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/astra-go/astra/log"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -20,7 +20,7 @@ func setupInvTest(t *testing.T) (*InventoryComponent, *gorm.DB, *miniredis.Minir
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 
-	logger := zap.NewNop()
+	logger := log.Default()
 	comp := NewInventoryComponent(db, rdb, logger)
 	err = comp.Init()
 	assert.NoError(t, err)

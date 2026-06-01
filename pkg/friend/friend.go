@@ -12,7 +12,7 @@ import (
 	"github.com/astra-go/game-backend/pkg/natsclient"
 	"github.com/redis/go-redis/v9"
 	"github.com/willf/bloom"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 	"gorm.io/gorm"
 )
 
@@ -34,7 +34,7 @@ type FriendComponent struct {
 	db              *gorm.DB
 	redis           *redis.Client
 	nc              natsclient.Client
-	logger          *zap.Logger
+	logger          *log.Logger
 	localCache      *lru.Cache[string, []common.FriendInfo]
 	bloomFilter     *bloom.BloomFilter
 	asyncWriteQueue chan *asyncWriteTask
@@ -47,7 +47,7 @@ type asyncWriteTask struct {
 }
 
 // NewFriendComponent 创建好友组件
-func NewFriendComponent(db *gorm.DB, redis *redis.Client, nc natsclient.Client, logger *zap.Logger) *FriendComponent {
+func NewFriendComponent(db *gorm.DB, redis *redis.Client, nc natsclient.Client, logger *log.Logger) *FriendComponent {
 	localCache, _ := lru.New[string, []common.FriendInfo](localCacheSize)
 
 	return &FriendComponent{
@@ -82,7 +82,7 @@ func (f *FriendComponent) Init() error {
 	go f.asyncWriteToMySQL()
 
 	f.logger.Info("FriendComponent 初始化完成",
-		zap.Int("bloom_filter_players", len(players)),
+		"bloom_filter_players", len(players),
 	)
 
 	return nil
@@ -145,9 +145,9 @@ func (f *FriendComponent) SendRequest(playerID, targetID, message string) error 
 	}
 
 	f.logger.Info("好友请求已发送",
-		zap.String("request_id", request.ID),
-		zap.String("player_id", playerID),
-		zap.String("target_id", targetID),
+		"request_id", request.ID,
+		"player_id", playerID,
+		"target_id", targetID,
 	)
 
 	// NATS通知目标玩家
@@ -222,9 +222,9 @@ func (f *FriendComponent) AcceptRequest(requestID, targetID string) error {
 	f.invalidateCache(request.TargetID)
 
 	f.logger.Info("好友请求已接受",
-		zap.String("request_id", requestID),
-		zap.String("player_id", request.PlayerID),
-		zap.String("target_id", request.TargetID),
+		"request_id", requestID,
+		"player_id", request.PlayerID,
+		"target_id", request.TargetID,
 	)
 
 	// NATS通知双方
@@ -255,9 +255,9 @@ func (f *FriendComponent) RejectRequest(requestID, targetID string) error {
 	}
 
 	f.logger.Info("好友请求已拒绝",
-		zap.String("request_id", requestID),
-		zap.String("player_id", request.PlayerID),
-		zap.String("target_id", request.TargetID),
+		"request_id", requestID,
+		"player_id", request.PlayerID,
+		"target_id", request.TargetID,
 	)
 
 	return nil
@@ -289,8 +289,8 @@ func (f *FriendComponent) DeleteFriend(playerID, friendID string) error {
 	f.invalidateCache(friendID)
 
 	f.logger.Info("好友已删除",
-		zap.String("player_id", playerID),
-		zap.String("friend_id", friendID),
+		"player_id", playerID,
+		"friend_id", friendID,
 	)
 
 	// NATS通知双方
@@ -304,7 +304,7 @@ func (f *FriendComponent) DeleteFriend(playerID, friendID string) error {
 func (f *FriendComponent) GetFriendList(playerID string) ([]common.FriendInfo, error) {
 	// 1. 本地LRU缓存查询
 	if cached, ok := f.localCache.Get(playerID); ok {
-		f.logger.Debug("好友列表命中本地缓存", zap.String("player_id", playerID))
+		f.logger.Debug("好友列表命中本地缓存", "player_id", playerID)
 		return cached, nil
 	}
 
@@ -317,7 +317,7 @@ func (f *FriendComponent) GetFriendList(playerID string) ([]common.FriendInfo, e
 		if err := common.JSONUnmarshal([]byte(val), &friendInfos); err == nil {
 			// 写入本地缓存
 			f.localCache.Add(playerID, friendInfos)
-			f.logger.Debug("好友列表命中Redis缓存", zap.String("player_id", playerID))
+			f.logger.Debug("好友列表命中Redis缓存", "player_id", playerID)
 			return friendInfos, nil
 		}
 	}
@@ -371,8 +371,8 @@ func (f *FriendComponent) GetFriendList(playerID string) ([]common.FriendInfo, e
 	f.localCache.Add(playerID, friendInfos)
 
 	f.logger.Debug("好友列表从MySQL加载",
-		zap.String("player_id", playerID),
-		zap.Int("count", len(friendInfos)),
+		"player_id", playerID,
+		"count", len(friendInfos),
 	)
 
 	return friendInfos, nil
@@ -398,7 +398,7 @@ func (f *FriendComponent) NotifyFriendsOnline(playerID string) {
 	// 获取好友列表
 	friends, err := f.GetFriendList(playerID)
 	if err != nil {
-		f.logger.Warn("获取好友列表失败", zap.Error(err))
+		f.logger.Warn("获取好友列表失败", "error", err)
 		return
 	}
 
@@ -415,8 +415,8 @@ func (f *FriendComponent) NotifyFriendsOnline(playerID string) {
 	}
 
 	f.logger.Debug("已通知好友上线",
-		zap.String("player_id", playerID),
-		zap.Int("friend_count", len(friends)),
+		"player_id", playerID,
+		"friend_count", len(friends),
 	)
 }
 
@@ -425,7 +425,7 @@ func (f *FriendComponent) NotifyFriendsOffline(playerID string) {
 	// 获取好友列表
 	friends, err := f.GetFriendList(playerID)
 	if err != nil {
-		f.logger.Warn("获取好友列表失败", zap.Error(err))
+		f.logger.Warn("获取好友列表失败", "error", err)
 		return
 	}
 
@@ -442,8 +442,8 @@ func (f *FriendComponent) NotifyFriendsOffline(playerID string) {
 	}
 
 	f.logger.Debug("已通知好友下线",
-		zap.String("player_id", playerID),
-		zap.Int("friend_count", len(friends)),
+		"player_id", playerID,
+		"friend_count", len(friends),
 	)
 }
 
@@ -494,7 +494,7 @@ func (f *FriendComponent) asyncWriteToMySQL() {
 		case "create_friend":
 			if friend, ok := task.data.(*common.Friend); ok {
 				if err := f.db.Create(friend).Error; err != nil {
-					f.logger.Error("异步写入好友关系失败", zap.Error(err))
+					f.logger.Error("异步写入好友关系失败", "error", err)
 				}
 			}
 		case "delete_friend":
@@ -502,7 +502,7 @@ func (f *FriendComponent) asyncWriteToMySQL() {
 				playerID := data["player_id"]
 				friendID := data["friend_id"]
 				if err := f.db.Where("player_id = ? AND friend_id = ?", playerID, friendID).Delete(&common.Friend{}).Error; err != nil {
-					f.logger.Error("异步删除好友关系失败", zap.Error(err))
+					f.logger.Error("异步删除好友关系失败", "error", err)
 				}
 			}
 		}

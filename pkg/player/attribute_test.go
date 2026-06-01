@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/astra-go/astra/log"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -29,7 +29,7 @@ func setupAttrTest(t *testing.T) (*PlayerAttributeComponent, *gorm.DB, *miniredi
 		Addr: mr.Addr(),
 	})
 
-	logger := zap.NewNop()
+	logger := log.Default()
 	comp := NewPlayerAttributeComponent(db, rdb, logger)
 	err = comp.Init()
 	assert.NoError(t, err)

@@ -6,17 +6,17 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 )
 
 // SessionManager 会话管理器（多端登录控制）
 type SessionManager struct {
 	redis  *redis.Client
-	logger *zap.Logger
+	logger *log.Logger
 }
 
 // NewSessionManager 创建会话管理器
-func NewSessionManager(redis *redis.Client, logger *zap.Logger) *SessionManager {
+func NewSessionManager(redis *redis.Client, logger *log.Logger) *SessionManager {
 	return &SessionManager{
 		redis:  redis,
 		logger: logger,
@@ -80,10 +80,10 @@ func (sm *SessionManager) CreateSession(ctx context.Context, playerID string, to
 	sm.redis.Expire(ctx, activeSessionsKey, 24*time.Hour)
 
 	sm.logger.Info("创建会话",
-		zap.String("player_id", playerID),
-		zap.String("device_type", string(deviceType)),
-		zap.String("device_id", deviceID),
-		zap.String("ip", ip),
+		"player_id", playerID,
+		"device_type", string(deviceType),
+		"device_id", deviceID,
+		"ip", ip,
 	)
 
 	return nil
@@ -104,8 +104,8 @@ func (sm *SessionManager) ValidateSession(ctx context.Context, playerID string, 
 	// 验证token是否匹配
 	if storedToken != token {
 		sm.logger.Warn("会话token不匹配",
-			zap.String("player_id", playerID),
-			zap.String("device_type", string(deviceType)),
+			"player_id", playerID,
+			"device_type", string(deviceType),
 		)
 		return false, nil
 	}
@@ -131,8 +131,8 @@ func (sm *SessionManager) KickSession(ctx context.Context, playerID string, devi
 	sm.redis.SRem(ctx, activeSessionsKey, string(deviceType))
 
 	sm.logger.Info("踢掉会话",
-		zap.String("player_id", playerID),
-		zap.String("device_type", string(deviceType)),
+		"player_id", playerID,
+		"device_type", string(deviceType),
 	)
 
 	return nil
@@ -158,8 +158,8 @@ func (sm *SessionManager) KickAllSessions(ctx context.Context, playerID string) 
 	sm.redis.Del(ctx, activeSessionsKey)
 
 	sm.logger.Info("踢掉所有会话",
-		zap.String("player_id", playerID),
-		zap.Int("count", len(deviceTypes)),
+		"player_id", playerID,
+		"count", len(deviceTypes),
 	)
 
 	return nil

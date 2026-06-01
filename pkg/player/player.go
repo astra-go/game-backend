@@ -9,7 +9,7 @@ import (
 
 	"github.com/astra-go/game-backend/pkg/common"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -20,7 +20,7 @@ var ctx = context.Background()
 type PlayerComponent struct {
 	db             *gorm.DB
 	redis          *redis.Client
-	logger         *zap.Logger
+	logger         *log.Logger
 	sessionManager *SessionManager
 	friendComponent interface {
 		NotifyFriendsOnline(playerID string)
@@ -29,7 +29,7 @@ type PlayerComponent struct {
 }
 
 // NewPlayerComponent 创建玩家组件
-func NewPlayerComponent(db *gorm.DB, redis *redis.Client, logger *zap.Logger, friendComponent interface {
+func NewPlayerComponent(db *gorm.DB, redis *redis.Client, logger *log.Logger, friendComponent interface {
 	NotifyFriendsOnline(playerID string)
 	NotifyFriendsOffline(playerID string)
 }) *PlayerComponent {
@@ -129,8 +129,8 @@ func (p *PlayerComponent) Register(req *RegisterRequest) (*common.Player, error)
 	}
 
 	p.logger.Info("玩家注册成功",
-		zap.String("player_id", player.ID),
-		zap.String("username", player.Username),
+		"player_id", player.ID,
+		"username", player.Username,
 	)
 
 	return player, nil
@@ -151,8 +151,8 @@ func (p *PlayerComponent) Login(req *LoginRequest) (*LoginResponse, error) {
 	err = bcrypt.CompareHashAndPassword([]byte(player.PasswordHash), []byte(req.Password))
 	if err != nil {
 		p.logger.Warn("密码验证失败",
-			zap.String("username", req.Username),
-			zap.String("ip", req.IP),
+			"username", req.Username,
+			"ip", req.IP,
 		)
 		return nil, errors.New("密码错误")
 	}
@@ -160,7 +160,7 @@ func (p *PlayerComponent) Login(req *LoginRequest) (*LoginResponse, error) {
 	// 生成JWT token
 	token, err := common.GenerateToken(player.ID, player.Username)
 	if err != nil {
-		p.logger.Error("生成JWT token失败", zap.Error(err))
+		p.logger.Error("生成JWT token失败", "error", err)
 		return nil, fmt.Errorf("生成token失败: %w", err)
 	}
 
@@ -172,9 +172,9 @@ func (p *PlayerComponent) Login(req *LoginRequest) (*LoginResponse, error) {
 			kickedDevice = session.DeviceID
 			p.sessionManager.KickSession(ctx, player.ID, req.DeviceType)
 			p.logger.Info("踢掉旧会话",
-				zap.String("player_id", player.ID),
-				zap.String("device_type", string(req.DeviceType)),
-				zap.String("old_device_id", session.DeviceID),
+				"player_id", player.ID,
+				"device_type", string(req.DeviceType),
+				"old_device_id", session.DeviceID,
 			)
 			break
 		}
@@ -183,7 +183,7 @@ func (p *PlayerComponent) Login(req *LoginRequest) (*LoginResponse, error) {
 	// 创建新会话
 	err = p.sessionManager.CreateSession(ctx, player.ID, token, req.DeviceType, req.DeviceID, req.IP)
 	if err != nil {
-		p.logger.Error("创建会话失败", zap.Error(err))
+		p.logger.Error("创建会话失败", "error", err)
 		return nil, fmt.Errorf("创建会话失败: %w", err)
 	}
 
@@ -200,11 +200,11 @@ func (p *PlayerComponent) Login(req *LoginRequest) (*LoginResponse, error) {
 	}
 
 	p.logger.Info("玩家登录成功",
-		zap.String("player_id", player.ID),
-		zap.String("username", player.Username),
-		zap.String("device_type", string(req.DeviceType)),
-		zap.String("device_id", req.DeviceID),
-		zap.String("ip", req.IP),
+		"player_id", player.ID,
+		"username", player.Username,
+		"device_type", string(req.DeviceType),
+		"device_id", req.DeviceID,
+		"ip", req.IP,
 	)
 
 	return &LoginResponse{
@@ -236,8 +236,8 @@ func (p *PlayerComponent) Logout(playerID string, deviceType DeviceType) error {
 	}
 
 	p.logger.Info("玩家登出",
-		zap.String("player_id", playerID),
-		zap.String("device_type", string(deviceType)),
+		"player_id", playerID,
+		"device_type", string(deviceType),
 	)
 
 	return nil
@@ -331,18 +331,18 @@ func (p *PlayerComponent) UpdateMMR(playerID string, won bool, isDraw bool, oppo
 	// 更新Redis缓存
 	err = p.redis.Set(ctx, fmt.Sprintf("mmr:%s", playerID), player.MMR, 1*time.Hour).Err()
 	if err != nil {
-		p.logger.Warn("更新Redis MMR缓存失败", zap.Error(err))
+		p.logger.Warn("更新Redis MMR缓存失败", "error", err)
 	}
 
 	p.logger.Info("MMR更新",
-		zap.String("player_id", playerID),
-		zap.Bool("won", won),
-		zap.Bool("is_draw", isDraw),
-		zap.Int32("old_mmr", player.MMR-finalChange),
-		zap.Int32("new_mmr", player.MMR),
-		zap.Int32("change", finalChange),
-		zap.Int("win_streak", winStreak),
-		zap.Int("lose_streak", loseStreak),
+		"player_id", playerID,
+		"won", won,
+		"is_draw", isDraw,
+		"old_mmr", player.MMR-finalChange,
+		"new_mmr", player.MMR,
+		"change", finalChange,
+		"win_streak", winStreak,
+		"lose_streak", loseStreak,
 	)
 
 	return finalChange, nil
@@ -402,7 +402,7 @@ func (p *PlayerComponent) ChangePassword(playerID, oldPassword, newPassword stri
 	p.sessionManager.KickAllSessions(ctx, playerID)
 
 	p.logger.Info("修改密码成功",
-		zap.String("player_id", playerID),
+		"player_id", playerID,
 	)
 
 	return nil

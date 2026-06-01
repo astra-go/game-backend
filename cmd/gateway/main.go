@@ -10,12 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/astra-go/astra"
 	"github.com/astra-go/game-backend/pkg/common"
 	"github.com/astra-go/game-backend/pkg/config"
 	"github.com/astra-go/game-backend/pkg/gateway"
-	"github.com/astra-go/astra"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 )
 
 func main() {
@@ -25,10 +24,6 @@ func main() {
 		slog.Error("加载配置失败", "error", err)
 		os.Exit(1)
 	}
-	
-	// 初始化日志
-	logger, _ := zap.NewProduction()
-	defer logger.Sync()
 	
 	slog.Info("启动游戏网关服务...")
 	

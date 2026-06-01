@@ -7,22 +7,22 @@ import (
 	"sync"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/pkg/common"
 	"github.com/astra-go/game-backend/pkg/framesync"
 	"github.com/astra-go/game-backend/pkg/statesync"
+	"github.com/redis/go-redis/v9"
 )
 
 var ctx = context.Background()
 
 // RoomComponent 房间管理组件
 type RoomComponent struct {
-	redis       *redis.Client
-	nats        NATSClient
-	logger      *zap.Logger
-	rooms       sync.Map // roomID -> *RoomSession
-	config      RoomConfig
+	redis  *redis.Client
+	nats   NATSClient
+	logger *log.Logger
+	rooms  sync.Map // roomID -> *RoomSession
+	config RoomConfig
 }
 
 // RoomConfig 房间配置
@@ -39,41 +39,41 @@ type RoomConfig struct {
 func DefaultRoomConfig() RoomConfig {
 	return RoomConfig{
 		MaxRoomsPerNode:   1000,
-		RoomTTL:            1 * time.Hour,
-		FrameSyncTickMs:    16, // 60Hz
-		StateSyncHz:        20, // 20Hz for state sync
-		ReconnectWindow:    5 * time.Minute,
-		MaxPlayersPerRoom:  10,
+		RoomTTL:           1 * time.Hour,
+		FrameSyncTickMs:   16, // 60Hz
+		StateSyncHz:       20, // 20Hz for state sync
+		ReconnectWindow:   5 * time.Minute,
+		MaxPlayersPerRoom: 10,
 	}
 }
 
 // SpectatorInfo 观战者信息
 type SpectatorInfo struct {
-	PlayerID    string    `json:"player_id"`
-	JoinAt      time.Time `json:"join_at"`
-	IsMuted     bool      `json:"is_muted"` // 是否被静音（不听语音）
+	PlayerID string    `json:"player_id"`
+	JoinAt   time.Time `json:"join_at"`
+	IsMuted  bool      `json:"is_muted"` // 是否被静音（不听语音）
 }
 
 // RoomSession 房间会话（实现 RoomSessionInterface）
 type RoomSession struct {
-	mu           sync.Mutex
-	roomID       string
-	ownerID      string
-	players      map[string]*common.RoomPlayer // playerID -> Player
-	readyStatus  map[string]bool               // playerID -> ready
-	spectators   map[string]*SpectatorInfo    // playerID -> SpectatorInfo 观战者列表
-	mode         common.GameMode
-	syncMode     common.SyncMode
-	status       common.RoomStatus
-	frame        int64
-	isRunning    bool
-	quitCh       chan struct{}
-	msgCh        chan common.InputCommand
-	stateCh      chan *common.EntityDelta
-	frameSync    *framesync.FrameSync
-	stateSync    *statesync.StateSync
-	createdAt    time.Time
-	startedAt    *time.Time
+	mu            sync.Mutex
+	roomID        string
+	ownerID       string
+	players       map[string]*common.RoomPlayer // playerID -> Player
+	readyStatus   map[string]bool               // playerID -> ready
+	spectators    map[string]*SpectatorInfo     // playerID -> SpectatorInfo 观战者列表
+	mode          common.GameMode
+	syncMode      common.SyncMode
+	status        common.RoomStatus
+	frame         int64
+	isRunning     bool
+	quitCh        chan struct{}
+	msgCh         chan common.InputCommand
+	stateCh       chan *common.EntityDelta
+	frameSync     *framesync.FrameSync
+	stateSync     *statesync.StateSync
+	createdAt     time.Time
+	startedAt     *time.Time
 	maxSpectators int // 最大观战人数，0表示不限制
 }
 
@@ -85,7 +85,7 @@ type NATSClient interface {
 }
 
 // NewRoomComponent 创建房间组件
-func NewRoomComponent(redis *redis.Client, nats NATSClient, logger *zap.Logger, cfg RoomConfig) *RoomComponent {
+func NewRoomComponent(redis *redis.Client, nats NATSClient, logger *log.Logger, cfg RoomConfig) *RoomComponent {
 	return &RoomComponent{
 		redis:  redis,
 		nats:   nats,
@@ -134,20 +134,20 @@ func (r *RoomComponent) CreateRoom(ownerID string, mode common.GameMode, maxPlay
 	r.redis.Expire(ctx, roomKey, r.config.RoomTTL)
 
 	session := &RoomSession{
-		roomID:       roomID,
-		ownerID:      ownerID,
-		players:      make(map[string]*common.RoomPlayer),
-		readyStatus: make(map[string]bool),
-		spectators:   make(map[string]*SpectatorInfo), // 初始化观战者映射
-		mode:         mode,
-		syncMode:     common.SyncModeFrame,
-		status:       common.RoomStatusWaiting,
-		frame:        0,
-		isRunning:    true,
-		quitCh:       make(chan struct{}),
-		msgCh:        make(chan common.InputCommand, 256),
-		stateCh:      make(chan *common.EntityDelta, 256),
-		createdAt:    time.Now(),
+		roomID:        roomID,
+		ownerID:       ownerID,
+		players:       make(map[string]*common.RoomPlayer),
+		readyStatus:   make(map[string]bool),
+		spectators:    make(map[string]*SpectatorInfo), // 初始化观战者映射
+		mode:          mode,
+		syncMode:      common.SyncModeFrame,
+		status:        common.RoomStatusWaiting,
+		frame:         0,
+		isRunning:     true,
+		quitCh:        make(chan struct{}),
+		msgCh:         make(chan common.InputCommand, 256),
+		stateCh:       make(chan *common.EntityDelta, 256),
+		createdAt:     time.Now(),
 		maxSpectators: 50, // 默认最大50个观战者
 	}
 
@@ -164,11 +164,7 @@ func (r *RoomComponent) CreateRoom(ownerID string, mode common.GameMode, maxPlay
 		session.stateSync = statesync.NewStateSync(session, r.config.StateSyncHz)
 	}
 
-	r.logger.Info("房间创建成功",
-		zap.String("room_id", roomID),
-		zap.String("owner_id", ownerID),
-		zap.String("mode", string(mode)),
-	)
+	r.logger.Info("房间创建成功", "room_id", roomID, "owner_id", ownerID, "mode", mode)
 
 	return room, nil
 }
@@ -222,8 +218,8 @@ func (r *RoomComponent) AddPlayer(roomID, playerID string, teamID, heroID int32)
 	})
 
 	r.logger.Info("玩家加入房间",
-		zap.String("room_id", roomID),
-		zap.String("player_id", playerID),
+		"room_id", roomID,
+		"player_id", playerID,
 	)
 
 	return nil
@@ -269,8 +265,8 @@ func (r *RoomComponent) RemovePlayer(roomID, playerID string) error {
 	}
 
 	r.logger.Info("玩家离开房间",
-		zap.String("room_id", roomID),
-		zap.String("player_id", playerID),
+		"room_id", roomID,
+		"player_id", playerID,
 	)
 
 	return nil
@@ -312,9 +308,9 @@ func (r *RoomComponent) KickPlayer(roomID, operatorID, targetID string) error {
 	})
 
 	r.logger.Info("玩家被踢出",
-		zap.String("room_id", roomID),
-		zap.String("target", targetID),
-		zap.String("operator", operatorID),
+		"room_id", roomID,
+		"target", targetID,
+		"operator", operatorID,
 	)
 
 	return nil
@@ -426,8 +422,8 @@ func (r *RoomComponent) StartGame(roomID, operatorID string) error {
 	})
 
 	r.logger.Info("游戏开始",
-		zap.String("room_id", roomID),
-		zap.Int("player_count", len(session.players)),
+		"room_id", roomID,
+		"player_count", len(session.players),
 	)
 
 	return nil
@@ -479,9 +475,9 @@ func (r *RoomComponent) EndGame(roomID string, winnerTeamID int32) error {
 	})
 
 	r.logger.Info("游戏结束",
-		zap.String("room_id", roomID),
-		zap.Int32("winner_team", winnerTeamID),
-		zap.Int64("duration", duration),
+		"room_id", roomID,
+		"winner_team", winnerTeamID,
+		"duration", duration,
 	)
 
 	return nil
@@ -632,9 +628,9 @@ func (r *RoomComponent) Reconnect(token string) (string, string, int64, error) {
 		})
 
 		r.logger.Info("玩家重连成功",
-			zap.String("room_id", roomID),
-			zap.String("player_id", playerID),
-			zap.Int64("current_frame", session.frame),
+			"room_id", roomID,
+			"player_id", playerID,
+			"current_frame", session.frame,
 		)
 
 		return roomID, playerID, frame, nil
@@ -714,12 +710,12 @@ func (r *RoomComponent) broadcastToRoom(roomID string, msg common.WSMessage) err
 	if err != nil {
 		return err
 	}
-	
+
 	// 广播给所有玩家
 	if r.nats != nil {
 		r.nats.Publish(fmt.Sprintf("room.%s.broadcast", roomID), data)
 	}
-	
+
 	// 广播给所有观战者（如果消息类型允许观战者接收）
 	if r.nats != nil && r.shouldBroadcastToSpectators(msg.Type) {
 		val, ok := r.rooms.Load(roomID)
@@ -730,7 +726,7 @@ func (r *RoomComponent) broadcastToRoom(roomID string, msg common.WSMessage) err
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -738,26 +734,26 @@ func (r *RoomComponent) broadcastToRoom(roomID string, msg common.WSMessage) err
 func (r *RoomComponent) shouldBroadcastToSpectators(msgType string) bool {
 	// 这些消息类型应该广播给观战者
 	broadcastTypes := []string{
-		common.WSMsgJoin,      // 玩家加入
-		common.WSMsgLeave,     // 玩家离开
-		"player_ready",        // 玩家准备
-		"game_start",          // 游戏开始
-		"game_end",            // 游戏结束
-		"spectator_join",      // 观战者加入
-		"spectator_leave",     // 观战者离开
+		common.WSMsgJoin,  // 玩家加入
+		common.WSMsgLeave, // 玩家离开
+		"player_ready",    // 玩家准备
+		"game_start",      // 游戏开始
+		"game_end",        // 游戏结束
+		"spectator_join",  // 观战者加入
+		"spectator_leave", // 观战者离开
 	}
-	
+
 	for _, t := range broadcastTypes {
 		if msgType == t {
 			return true
 		}
 	}
-	
+
 	// 游戏中的帧同步消息也给观战者（延迟3秒）
 	if msgType == common.WSMsgFrame {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -786,7 +782,7 @@ func (r *RoomComponent) DestroyRoom(roomID string) error {
 
 	r.redis.Del(ctx, fmt.Sprintf("room:%s", roomID))
 
-	r.logger.Info("房间销毁", zap.String("room_id", roomID))
+	r.logger.Info("房间销毁", "room_id", roomID)
 
 	return nil
 }
@@ -927,55 +923,55 @@ func (r *RoomComponent) AddSpectator(roomID, playerID string) error {
 	if !ok {
 		return fmt.Errorf("房间不存在: %s", roomID)
 	}
-	
+
 	session := val.(*RoomSession)
-	
+
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	
+
 	// 检查是否已经是玩家
 	if _, exists := session.players[playerID]; exists {
 		return fmt.Errorf("玩家已在房间中，不能观战")
 	}
-	
+
 	// 检查是否已经是观战者
 	if _, exists := session.spectators[playerID]; exists {
 		return fmt.Errorf("玩家已经在观战中")
 	}
-	
+
 	// 检查观战者数量限制
 	if session.maxSpectators > 0 && len(session.spectators) >= session.maxSpectators {
 		return fmt.Errorf("观战者数量已达上限: %d", session.maxSpectators)
 	}
-	
+
 	// 添加观战者
 	session.spectators[playerID] = &SpectatorInfo{
 		PlayerID: playerID,
 		JoinAt:   time.Now(),
 		IsMuted:  false,
 	}
-	
+
 	// 保存到Redis
 	spectatorKey := fmt.Sprintf("room:%s:spectators", roomID)
 	r.redis.HSet(ctx, spectatorKey, playerID, time.Now().Unix())
 	r.redis.Expire(ctx, spectatorKey, r.config.RoomTTL)
-	
+
 	// 广播观战者加入消息
 	r.broadcastToRoom(roomID, common.WSMessage{
 		Type:   "spectator_join",
 		RoomID: roomID,
 		Data:   map[string]any{"player_id": playerID, "join_at": time.Now().Unix()},
 	})
-	
+
 	// 向观战者发送当前房间状态
 	r.sendRoomStateToSpectator(roomID, playerID)
-	
+
 	r.logger.Info("观战者加入",
-		zap.String("room_id", roomID),
-		zap.String("player_id", playerID),
-		zap.Int("total_spectators", len(session.spectators)),
+		"room_id", roomID,
+		"player_id", playerID,
+		"total_spectators", len(session.spectators),
 	)
-	
+
 	return nil
 }
 
@@ -985,37 +981,37 @@ func (r *RoomComponent) RemoveSpectator(roomID, playerID string) error {
 	if !ok {
 		return fmt.Errorf("房间不存在")
 	}
-	
+
 	session := val.(*RoomSession)
-	
+
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	
+
 	// 检查是否是观战者
 	if _, exists := session.spectators[playerID]; !exists {
 		return fmt.Errorf("玩家不是观战者")
 	}
-	
+
 	// 移除观战者
 	delete(session.spectators, playerID)
-	
+
 	// 从Redis移除
 	spectatorKey := fmt.Sprintf("room:%s:spectators", roomID)
 	r.redis.HDel(ctx, spectatorKey, playerID)
-	
+
 	// 广播观战者离开消息
 	r.broadcastToRoom(roomID, common.WSMessage{
 		Type:   "spectator_leave",
 		RoomID: roomID,
 		Data:   map[string]any{"player_id": playerID},
 	})
-	
+
 	r.logger.Info("观战者离开",
-		zap.String("room_id", roomID),
-		zap.String("player_id", playerID),
-		zap.Int("total_spectators", len(session.spectators)),
+		"room_id", roomID,
+		"player_id", playerID,
+		"total_spectators", len(session.spectators),
 	)
-	
+
 	return nil
 }
 
@@ -1025,17 +1021,17 @@ func (r *RoomComponent) GetSpectators(roomID string) ([]*SpectatorInfo, error) {
 	if !ok {
 		return nil, fmt.Errorf("房间不存在")
 	}
-	
+
 	session := val.(*RoomSession)
-	
+
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	
+
 	spectators := make([]*SpectatorInfo, 0, len(session.spectators))
 	for _, spec := range session.spectators {
 		spectators = append(spectators, spec)
 	}
-	
+
 	return spectators, nil
 }
 
@@ -1045,29 +1041,29 @@ func (r *RoomComponent) SetMaxSpectators(roomID, operatorID string, max int) err
 	if !ok {
 		return fmt.Errorf("房间不存在")
 	}
-	
+
 	session := val.(*RoomSession)
-	
+
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	
+
 	// 检查权限（只有房主可以设置）
 	if session.ownerID != operatorID {
 		return fmt.Errorf("只有房主可以设置观战者数量")
 	}
-	
+
 	if max < 0 {
 		max = 0
 	}
-	
+
 	session.maxSpectators = max
-	
+
 	r.logger.Info("设置房间最大观战者数量",
-		zap.String("room_id", roomID),
-		zap.String("operator", operatorID),
-		zap.Int("max_spectators", max),
+		"room_id", roomID,
+		"operator", operatorID,
+		"max_spectators", max,
 	)
-	
+
 	return nil
 }
 
@@ -1077,37 +1073,37 @@ func (r *RoomComponent) MuteSpectator(roomID, operatorID, targetID string, mute 
 	if !ok {
 		return fmt.Errorf("房间不存在")
 	}
-	
+
 	session := val.(*RoomSession)
-	
+
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	
+
 	// 检查权限（只有房主可以静音）
 	if session.ownerID != operatorID {
 		return fmt.Errorf("只有房主可以静音观战者")
 	}
-	
+
 	// 检查目标是否是观战者
 	spec, exists := session.spectators[targetID]
 	if !exists {
 		return fmt.Errorf("目标玩家不是观战者")
 	}
-	
+
 	spec.IsMuted = mute
-	
+
 	action := "unmute"
 	if mute {
 		action = "mute"
 	}
-	
+
 	r.logger.Info("观战者静音状态更新",
-		zap.String("room_id", roomID),
-		zap.String("operator", operatorID),
-		zap.String("target", targetID),
-		zap.String("action", action),
+		"room_id", roomID,
+		"operator", operatorID,
+		"target", targetID,
+		"action", action,
 	)
-	
+
 	return nil
 }
 
@@ -1118,30 +1114,30 @@ func (r *RoomComponent) sendRoomStateToSpectator(roomID, spectatorID string) err
 	if err != nil {
 		return err
 	}
-	
+
 	// 获取玩家列表
 	players, err := r.GetRoomPlayers(roomID)
 	if err != nil {
 		return err
 	}
-	
+
 	// 构造状态消息
 	stateMsg := common.WSMessage{
 		Type:   "room_state",
 		RoomID: roomID,
 		Data: map[string]any{
-			"room":    room,
-			"players": players,
+			"room":         room,
+			"players":      players,
 			"is_spectator": true,
 		},
 	}
-	
+
 	// 发送给观战者（通过NATS单播）
 	if r.nats != nil {
 		data, _ := json.Marshal(stateMsg)
 		r.nats.Publish(fmt.Sprintf("room.%s.spectator.%s", roomID, spectatorID), data)
 	}
-	
+
 	return nil
 }
 
@@ -1151,12 +1147,12 @@ func (r *RoomComponent) broadcastToSpectators(roomID string, msg common.WSMessag
 	if !ok {
 		return fmt.Errorf("房间不存在")
 	}
-	
+
 	session := val.(*RoomSession)
-	
+
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	
+
 	// 向所有观战者发送消息
 	for spectatorID := range session.spectators {
 		if r.nats != nil {
@@ -1164,6 +1160,6 @@ func (r *RoomComponent) broadcastToSpectators(roomID string, msg common.WSMessag
 			r.nats.Publish(fmt.Sprintf("room.%s.spectator.%s", roomID, spectatorID), data)
 		}
 	}
-	
+
 	return nil
 }

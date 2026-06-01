@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/astra-go/astra"
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/internal/models"
 	"github.com/astra-go/game-backend/internal/services"
 	"github.com/astra-go/game-backend/pkg/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -94,7 +94,7 @@ func (m *MockChatService) DB() *gorm.DB {
 
 func TestChatAPI_SendPrivateMessage(t *testing.T) {
 	mockService := new(MockChatService)
-	logger, _ := zap.NewDevelopment()
+	logger := log.Default()
 
 	api := NewChatAPI(mockService, logger)
 
@@ -176,7 +176,7 @@ func TestChatAPI_SendPrivateMessage(t *testing.T) {
 
 func TestChatAPI_GetPrivateMessages(t *testing.T) {
 	mockService := new(MockChatService)
-	logger, _ := zap.NewDevelopment()
+	logger := log.Default()
 
 	api := NewChatAPI(mockService, logger)
 
@@ -239,7 +239,7 @@ func TestChatAPI_GetPrivateMessages(t *testing.T) {
 
 func TestChatAPI_SendGuildMessage(t *testing.T) {
 	mockService := new(MockChatService)
-	logger, _ := zap.NewDevelopment()
+	logger := log.Default()
 
 	api := NewChatAPI(mockService, logger)
 
@@ -299,7 +299,7 @@ func TestChatAPI_SendGuildMessage(t *testing.T) {
 
 func TestChatAPI_SendWorldMessage(t *testing.T) {
 	mockService := new(MockChatService)
-	logger, _ := zap.NewDevelopment()
+	logger := log.Default()
 
 	api := NewChatAPI(mockService, logger)
 
@@ -357,7 +357,7 @@ func TestChatAPI_SendWorldMessage(t *testing.T) {
 
 func TestChatAPI_MarkMessagesAsRead(t *testing.T) {
 	mockService := new(MockChatService)
-	logger, _ := zap.NewDevelopment()
+	logger := log.Default()
 
 	api := NewChatAPI(mockService, logger)
 
@@ -394,7 +394,7 @@ func TestChatAPI_MarkMessagesAsRead(t *testing.T) {
 
 func TestChatAPI_GetUnreadCount(t *testing.T) {
 	mockService := new(MockChatService)
-	logger, _ := zap.NewDevelopment()
+	logger := log.Default()
 
 	api := NewChatAPI(mockService, logger)
 
@@ -429,7 +429,7 @@ func TestChatAPI_GetUnreadCount(t *testing.T) {
 
 func TestChatAPI_MutePlayer(t *testing.T) {
 	mockService := new(MockChatService)
-	logger, _ := zap.NewDevelopment()
+	logger := log.Default()
 
 	api := NewChatAPI(mockService, logger)
 
@@ -466,7 +466,7 @@ func TestChatAPI_MutePlayer(t *testing.T) {
 
 func TestChatAPI_GetMuteStatus(t *testing.T) {
 	mockService := new(MockChatService)
-	logger, _ := zap.NewDevelopment()
+	logger := log.Default()
 
 	api := NewChatAPI(mockService, logger)
 

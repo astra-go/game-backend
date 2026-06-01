@@ -16,7 +16,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -32,7 +32,7 @@ type testEnv struct {
 	app        *astra.App
 	server     *testutil.Server
 	playerComp *player.PlayerComponent
-	logger     *zap.Logger
+	logger     *log.Logger
 	db         *gorm.DB
 	mr         *miniredis.Miniredis
 }
@@ -41,7 +41,7 @@ type testEnv struct {
 func setupTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 
-	logger := zap.NewNop()
+	logger := log.Default()
 
 	// 使用MySQL测试数据库
 	db, err := gorm.Open(mysql.Open("root:@tcp(127.0.0.1:3306)/astra_game_test?parseTime=true&charset=utf8mb4"), &gorm.Config{})
@@ -223,7 +223,7 @@ func TestLoginUserNotExist(t *testing.T) {
 // ========== 认证中间件测试（不依赖数据库） ==========
 
 func TestAuthMiddlewareNoTokenUnit(t *testing.T) {
-	logger := zap.NewNop()
+	logger := log.Default()
 	mw := middleware.AuthMiddleware(logger)
 
 	app := testutil.NewTestApp()
@@ -243,7 +243,7 @@ func TestAuthMiddlewareNoTokenUnit(t *testing.T) {
 }
 
 func TestAuthMiddlewareValidTokenUnit(t *testing.T) {
-	logger := zap.NewNop()
+	logger := log.Default()
 	mw := middleware.AuthMiddleware(logger)
 
 	app := testutil.NewTestApp()
@@ -274,7 +274,7 @@ func TestAuthMiddlewareValidTokenUnit(t *testing.T) {
 }
 
 func TestAuthMiddlewareQueryToken(t *testing.T) {
-	logger := zap.NewNop()
+	logger := log.Default()
 	mw := middleware.AuthMiddleware(logger)
 
 	app := testutil.NewTestApp()
@@ -292,7 +292,7 @@ func TestAuthMiddlewareQueryToken(t *testing.T) {
 }
 
 func TestAuthMiddlewareInvalidToken(t *testing.T) {
-	logger := zap.NewNop()
+	logger := log.Default()
 	mw := middleware.AuthMiddleware(logger)
 
 	app := testutil.NewTestApp()
@@ -313,7 +313,7 @@ func TestAuthMiddlewareInvalidToken(t *testing.T) {
 }
 
 func TestAuthMiddlewareExpiredToken(t *testing.T) {
-	logger := zap.NewNop()
+	logger := log.Default()
 	mw := middleware.AuthMiddleware(logger)
 
 	app := testutil.NewTestApp()
@@ -586,7 +586,7 @@ func TestDeleteRedisKeys(t *testing.T) {
 	require.NoError(t, err)
 	defer mr.Close()
 
-	logger := zap.NewNop()
+	logger := log.Default()
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: mr.Addr(),
 	})

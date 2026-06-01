@@ -7,12 +7,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/astra-go/astra"
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/pkg/common"
 	"github.com/astra-go/game-backend/pkg/config"
 	"github.com/astra-go/game-backend/pkg/room"
-	"github.com/astra-go/astra"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 )
 
 func main() {
@@ -23,8 +23,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	logger := log.Default()
 
 	slog.Info("启动房间管理服务...")
 

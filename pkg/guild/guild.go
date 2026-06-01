@@ -11,7 +11,7 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/astra-go/game-backend/pkg/natsclient"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 	"gorm.io/gorm"
 )
 
@@ -90,14 +90,14 @@ type GuildComponent struct {
 	db         *gorm.DB
 	redis      *redis.Client
 	nc         natsclient.Client
-	logger     *zap.Logger
+	logger     *log.Logger
 	localCache *lru.Cache[uint64, *models.Guild]
 	mu         sync.RWMutex
 	service     *GuildService
 }
 
 // NewGuildComponent 创建公会组件
-func NewGuildComponent(db *gorm.DB, redis *redis.Client, nc natsclient.Client, logger *zap.Logger) *GuildComponent {
+func NewGuildComponent(db *gorm.DB, redis *redis.Client, nc natsclient.Client, logger *log.Logger) *GuildComponent {
 	localCache, _ := lru.New[uint64, *models.Guild](localCacheSize)
 
 	return &GuildComponent{
@@ -179,9 +179,9 @@ func (g *GuildComponent) CreateGuild(leaderID uint64, name, description, icon st
 	g.invalidateCache(guild.ID)
 
 	g.logger.Info("公会已创建",
-		zap.Uint64("guild_id", guild.ID),
-		zap.String("name", name),
-		zap.Uint64("leader_id", leaderID),
+		"guild_id", guild.ID,
+		"name", name,
+		"leader_id", leaderID,
 	)
 
 	// NATS通知
@@ -237,8 +237,8 @@ func (g *GuildComponent) DissolveGuild(guildID, operatorID uint64) error {
 	g.invalidateCache(guildID)
 
 	g.logger.Info("公会已解散",
-		zap.Uint64("guild_id", guildID),
-		zap.Uint64("operator_id", operatorID),
+		"guild_id", guildID,
+		"operator_id", operatorID,
 	)
 
 	// NATS通知所有成员
@@ -295,9 +295,9 @@ func (g *GuildComponent) InviteMember(guildID, inviterID, targetID uint64) error
 	g.invalidateCache(guildID)
 
 	g.logger.Info("成员已邀请",
-		zap.Uint64("guild_id", guildID),
-		zap.Uint64("player_id", targetID),
-		zap.Uint64("inviter_id", inviterID),
+		"guild_id", guildID,
+		"player_id", targetID,
+		"inviter_id", inviterID,
 	)
 
 	return nil
@@ -351,9 +351,9 @@ func (g *GuildComponent) KickMember(guildID, operatorID, targetID uint64) error 
 	g.invalidateCache(guildID)
 
 	g.logger.Info("成员已被踢出公会",
-		zap.Uint64("guild_id", guildID),
-		zap.Uint64("player_id", targetID),
-		zap.Uint64("operator_id", operatorID),
+		"guild_id", guildID,
+		"player_id", targetID,
+		"operator_id", operatorID,
 	)
 
 	// NATS通知
@@ -385,8 +385,8 @@ func (g *GuildComponent) LeaveGuild(guildID, playerID uint64) error {
 	g.invalidateCache(guildID)
 
 	g.logger.Info("成员已离开公会",
-		zap.Uint64("guild_id", guildID),
-		zap.Uint64("player_id", playerID),
+		"guild_id", guildID,
+		"player_id", playerID,
 	)
 
 	// NATS通知
@@ -422,9 +422,9 @@ func (g *GuildComponent) PromoteMember(guildID, operatorID, targetID uint64) err
 	}
 
 	g.logger.Info("成员已提升",
-		zap.Uint64("guild_id", guildID),
-		zap.Uint64("player_id", targetID),
-		zap.String("new_role", string(RoleOfficer)),
+		"guild_id", guildID,
+		"player_id", targetID,
+		"new_role", string(RoleOfficer),
 	)
 
 	// NATS通知
@@ -460,8 +460,8 @@ func (g *GuildComponent) DemoteMember(guildID, operatorID, targetID uint64) erro
 	}
 
 	g.logger.Info("成员已降级",
-		zap.Uint64("guild_id", guildID),
-		zap.Uint64("player_id", targetID),
+		"guild_id", guildID,
+		"player_id", targetID,
 	)
 
 	// NATS通知
@@ -525,9 +525,9 @@ func (g *GuildComponent) TransferLeadership(guildID, currentLeaderID, newLeaderI
 	g.invalidateCache(guildID)
 
 	g.logger.Info("会长已转让",
-		zap.Uint64("guild_id", guildID),
-		zap.Uint64("old_leader_id", currentLeaderID),
-		zap.Uint64("new_leader_id", newLeaderID),
+		"guild_id", guildID,
+		"old_leader_id", currentLeaderID,
+		"new_leader_id", newLeaderID,
 	)
 
 	// NATS通知
@@ -567,8 +567,8 @@ func (g *GuildComponent) UpdateGuildInfo(guildID, operatorID uint64, name, descr
 	g.invalidateCache(guildID)
 
 	g.logger.Info("公会信息已更新",
-		zap.Uint64("guild_id", guildID),
-		zap.Uint64("operator_id", operatorID),
+		"guild_id", guildID,
+		"operator_id", operatorID,
 	)
 
 	return nil
@@ -578,7 +578,7 @@ func (g *GuildComponent) UpdateGuildInfo(guildID, operatorID uint64, name, descr
 func (g *GuildComponent) GetGuild(guildID uint64) (*models.Guild, error) {
 	// 本地缓存查询
 	if cached, ok := g.localCache.Get(guildID); ok {
-		g.logger.Debug("公会信息命中本地缓存", zap.Uint64("guild_id", guildID))
+		g.logger.Debug("公会信息命中本地缓存", "guild_id", guildID)
 		return cached, nil
 	}
 

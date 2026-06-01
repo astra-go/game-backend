@@ -2,19 +2,19 @@ package api
 
 import (
 	"github.com/astra-go/astra"
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/pkg/friend"
 	"github.com/astra-go/game-backend/pkg/middleware"
-	"go.uber.org/zap"
 )
 
 // FriendAPI 好友系统API
 type FriendAPI struct {
 	fc     *friend.FriendComponent
-	logger *zap.Logger
+	logger *log.Logger
 }
 
 // NewFriendAPI 创建好友API实例
-func NewFriendAPI(fc *friend.FriendComponent, logger *zap.Logger) *FriendAPI {
+func NewFriendAPI(fc *friend.FriendComponent, logger *log.Logger) *FriendAPI {
 	return &FriendAPI{
 		fc:     fc,
 		logger: logger,
@@ -53,10 +53,11 @@ func (api *FriendAPI) SendRequest(c *astra.Ctx) error {
 	err := api.fc.SendRequest(playerID.(string), req.TargetID, req.Message)
 	if err != nil {
 		api.logger.Warn("发送好友请求失败",
-			zap.String("player_id", playerID.(string)),
-			zap.String("target_id", req.TargetID),
-			zap.Error(err),
+			"player_id", playerID,
+			"target_id", req.TargetID,
+			"error", err,
 		)
+
 		return ResponseError(c, 400, err.Error())
 	}
 
@@ -80,9 +81,9 @@ func (api *FriendAPI) AcceptRequest(c *astra.Ctx) error {
 	err := api.fc.AcceptRequest(req.RequestID, playerID.(string))
 	if err != nil {
 		api.logger.Warn("接受好友请求失败",
-			zap.String("player_id", playerID.(string)),
-			zap.String("request_id", req.RequestID),
-			zap.Error(err),
+			"player_id", playerID,
+			"request_id", req.RequestID,
+			"error", err,
 		)
 		return ResponseError(c, 400, err.Error())
 	}
@@ -107,9 +108,9 @@ func (api *FriendAPI) RejectRequest(c *astra.Ctx) error {
 	err := api.fc.RejectRequest(req.RequestID, playerID.(string))
 	if err != nil {
 		api.logger.Warn("拒绝好友请求失败",
-			zap.String("player_id", playerID.(string)),
-			zap.String("request_id", req.RequestID),
-			zap.Error(err),
+			"player_id", playerID,
+			"request_id", req.RequestID,
+			"error", err,
 		)
 		return ResponseError(c, 400, err.Error())
 	}
@@ -131,9 +132,9 @@ func (api *FriendAPI) DeleteFriend(c *astra.Ctx) error {
 	err := api.fc.DeleteFriend(playerID.(string), friendID)
 	if err != nil {
 		api.logger.Warn("删除好友失败",
-			zap.String("player_id", playerID.(string)),
-			zap.String("friend_id", friendID),
-			zap.Error(err),
+			"player_id", playerID,
+			"friend_id", friendID,
+			"error", err,
 		)
 		return ResponseError(c, 400, err.Error())
 	}
@@ -150,8 +151,8 @@ func (api *FriendAPI) GetFriendList(c *astra.Ctx) error {
 	friends, err := api.fc.GetFriendList(playerID.(string))
 	if err != nil {
 		api.logger.Error("获取好友列表失败",
-			zap.String("player_id", playerID.(string)),
-			zap.Error(err),
+			"player_id", playerID,
+			"error", err,
 		)
 		return ResponseError(c, 500, "获取好友列表失败")
 	}
@@ -169,8 +170,8 @@ func (api *FriendAPI) GetPendingRequests(c *astra.Ctx) error {
 	requests, err := api.fc.GetPendingRequests(playerID.(string))
 	if err != nil {
 		api.logger.Error("获取好友请求失败",
-			zap.String("player_id", playerID.(string)),
-			zap.Error(err),
+			"player_id", playerID,
+			"error", err,
 		)
 		return ResponseError(c, 500, "获取好友请求失败")
 	}
@@ -194,8 +195,8 @@ func (api *FriendAPI) GetOnlineStatus(c *astra.Ctx) error {
 	friends, err := api.fc.GetFriendList(playerID.(string))
 	if err != nil {
 		api.logger.Error("获取好友列表失败",
-			zap.String("player_id", playerID.(string)),
-			zap.Error(err),
+			"player_id", playerID,
+			"error", err,
 		)
 		return ResponseError(c, 500, "查询失败")
 	}

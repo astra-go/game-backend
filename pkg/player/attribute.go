@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/astra-go/astra/log"
 	"gorm.io/gorm"
 )
 
@@ -81,11 +81,11 @@ func RequiredExp(level int32) int64 {
 type PlayerAttributeComponent struct {
 	db     *gorm.DB
 	redis  *redis.Client
-	logger *zap.Logger
+	logger *log.Logger
 }
 
 // NewPlayerAttributeComponent 创建玩家属性组件
-func NewPlayerAttributeComponent(db *gorm.DB, redis *redis.Client, logger *zap.Logger) *PlayerAttributeComponent {
+func NewPlayerAttributeComponent(db *gorm.DB, redis *redis.Client, logger *log.Logger) *PlayerAttributeComponent {
 	return &PlayerAttributeComponent{
 		db:     db,
 		redis:  redis,
@@ -174,9 +174,9 @@ func (a *PlayerAttributeComponent) UpdateAttribute(playerID string, attrType Att
 	a.setAttrCache(playerID, &attrs)
 
 	a.logger.Debug("属性更新",
-		zap.String("player_id", playerID),
-		zap.String("attr", string(attrType)),
-		zap.Int32("value", value),
+		"player_id", playerID,
+		"attr", string(attrType),
+		"value", value,
 	)
 
 	return nil
@@ -238,8 +238,8 @@ func (a *PlayerAttributeComponent) addExpInternal(playerID string, exp int64) er
 			return fmt.Errorf("应用成长属性失败: %w", err)
 		}
 		a.logger.Info("玩家升级",
-			zap.String("player_id", playerID),
-			zap.Int32("new_level", level),
+			"player_id", playerID,
+			"new_level", level,
 		)
 	}
 
@@ -364,11 +364,11 @@ func (a *PlayerAttributeComponent) AddDiamond(playerID string, amount int64) err
 func (a *PlayerAttributeComponent) setAttrCache(playerID string, attrs *PlayerAttributes) {
 	data, err := json.Marshal(attrs)
 	if err != nil {
-		a.logger.Warn("序列化属性缓存失败", zap.Error(err))
+		a.logger.Warn("序列化属性缓存失败", "error", err)
 		return
 	}
 	if err := a.redis.Set(ctx, attrCachePrefix+playerID, data, attrCacheTTL).Err(); err != nil {
-		a.logger.Warn("写入属性缓存失败", zap.Error(err))
+		a.logger.Warn("写入属性缓存失败", "error", err)
 	}
 }
 

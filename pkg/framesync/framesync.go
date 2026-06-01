@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/astra-go/astra/log"
 	"github.com/astra-go/game-backend/pkg/common"
-	"go.uber.org/zap"
 )
 
 // FrameSync 帧同步核心组件
@@ -22,7 +22,7 @@ type FrameSync struct {
 	broadcastCh    chan *common.WSMessage
 	inputCh        chan common.InputCommand
 	quitCh         chan struct{}
-	logger         *zap.Logger
+	logger         *log.Logger
 	
 	// 帧率控制
 	ticker         *time.Ticker
@@ -42,7 +42,7 @@ func NewFrameSync(session common.RoomSessionInterface, tickMs int) *FrameSync {
 		broadcastCh:   make(chan *common.WSMessage, 256),
 		inputCh:       make(chan common.InputCommand, 1024),
 		quitCh:        make(chan struct{}),
-		logger:        zap.L().With(zap.String("component", "framesync")),
+		logger:        log.Default().WithFields("component", "framesync"),
 		paused:        false,
 	}
 }
@@ -52,7 +52,7 @@ func (fs *FrameSync) Run() {
 	fs.running = true
 	fs.ticker = time.NewTicker(time.Duration(fs.tickMs) * time.Millisecond)
 	
-	fs.logger.Info("帧同步启动", zap.Int("tick_ms", fs.tickMs))
+	fs.logger.Info("帧同步启动", "tick_ms", fs.tickMs)
 	
 	defer func() {
 		fs.ticker.Stop()
@@ -160,7 +160,7 @@ func (fs *FrameSync) broadcastFrame(frame int64, inputs []common.InputCommand) {
 	// 序列化
 	data, err := json.Marshal(msg)
 	if err != nil {
-		fs.logger.Error("帧数据序列化失败", zap.Error(err))
+		fs.logger.Error("帧数据序列化失败", "error", err)
 		return
 	}
 	
@@ -169,8 +169,8 @@ func (fs *FrameSync) broadcastFrame(frame int64, inputs []common.InputCommand) {
 	// nats.Publish(fmt.Sprintf("room.%s.frame.%d", fs.session.GetRoomID(), frame), data)
 	
 	fs.logger.Debug("帧广播",
-		zap.Int64("frame", frame),
-		zap.Int("input_count", len(inputs)),
+		"frame", frame,
+		"input_count", len(inputs),
 	)
 }
 
@@ -184,9 +184,9 @@ func (fs *FrameSync) SubmitInput(input common.InputCommand) error {
 	if input.Frame < fs.frame-10 {
 		// 太旧的帧，丢弃
 		fs.logger.Warn("丢弃过期输入",
-			zap.String("player_id", input.PlayerID),
-			zap.Int64("input_frame", input.Frame),
-			zap.Int64("current_frame", fs.frame),
+			"player_id", input.PlayerID,
+			"input_frame", input.Frame,
+			"current_frame", fs.frame,
 		)
 		return nil
 	}
