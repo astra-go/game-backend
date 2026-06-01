@@ -98,15 +98,16 @@ func createRoomInMemory(r *RoomComponent, ownerID string, mode common.GameMode, 
 	}
 
 	session := &RoomSession{
-		roomID:    roomID,
-		players:   make(map[string]*common.RoomPlayer),
-		mode:      mode,
-		syncMode:  common.SyncModeFrame, // 默认帧同步
-		frame:     0,
-		isRunning: true,
-		quitCh:    make(chan struct{}),
-		msgCh:     make(chan common.InputCommand, 256),
-		stateCh:   make(chan *common.EntityDelta, 256),
+		roomID:      roomID,
+		players:     make(map[string]*common.RoomPlayer),
+		spectators: make(map[string]*SpectatorInfo),
+		mode:       mode,
+		syncMode:   common.SyncModeFrame, // 默认帧同步
+		frame:      0,
+		isRunning:  true,
+		quitCh:     make(chan struct{}),
+		msgCh:      make(chan common.InputCommand, 256),
+		stateCh:    make(chan *common.EntityDelta, 256),
 	}
 
 	// 根据模式设置同步模式（与CreateRoom逻辑一致）
