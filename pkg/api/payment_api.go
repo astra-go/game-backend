@@ -177,7 +177,7 @@ func (api *PaymentAPI) AlipayNotify(c *astra.Ctx) error {
 	result := api.shopService.HandlePaymentNotify(ctx, payment.ChannelAlipay, params, body)
 
 	c.SetHeader("Content-Type", "text/plain")
-	return c.String(http.StatusOK, result.Reply)
+	return c.String(http.StatusOK, "%s", result.Reply)
 }
 
 // AlipayReturn 支付宝同步返回
@@ -204,7 +204,7 @@ func (api *PaymentAPI) WechatNotify(c *astra.Ctx) error {
 	result := api.shopService.HandlePaymentNotify(ctx, payment.ChannelWechat, params, body)
 
 	c.SetHeader("Content-Type", "application/xml")
-	return c.String(http.StatusOK, result.Reply)
+	return c.String(http.StatusOK, "%s", result.Reply)
 }
 
 func (api *PaymentAPI) parseWechatNotify(body string) map[string]string {
