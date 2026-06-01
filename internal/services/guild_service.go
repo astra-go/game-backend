@@ -355,3 +355,157 @@ func (s *GuildService) GetMemberCount(ctx context.Context, guildID uint64) (int,
 	err := s.db.Model(&models.GuildMember{}).Where("guild_id = ?", guildID).Count(&count).Error
 	return int(count), err
 }
+
+// DissolveGuild dissolves a guild (only master can do this)
+func (s *GuildService) DissolveGuild(ctx context.Context, guildID, masterID uint64) error {
+	var guild models.Guild
+	if err := s.db.First(&guild, guildID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGuildNotFound
+		}
+		return err
+	}
+
+	// Only master can dissolve
+	if guild.MasterID != masterID {
+		return ErrInsufficientPermission
+	}
+
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		// Delete all members
+		if err := tx.Where("guild_id = ?", guildID).Delete(&models.GuildMember{}).Error; err != nil {
+			return err
+		}
+
+		// Delete all applications
+		if err := tx.Where("guild_id = ?", guildID).Delete(&models.GuildApplication{}).Error; err != nil {
+			return err
+		}
+
+		// Delete the guild
+		return tx.Delete(&guild).Error
+	})
+}
+
+// InviteMember invites a player to join the guild
+func (s *GuildService) InviteMember(ctx context.Context, guildID, inviterID, targetID uint64) error {
+	canManage, err := s.CanManageMembers(ctx, guildID, inviterID)
+	if err != nil {
+		return err
+	}
+	if !canManage {
+		return ErrInsufficientPermission
+	}
+
+	// Check if target is already in a guild
+	hasGuild, err := s.HasGuild(ctx, targetID)
+	if err != nil {
+		return err
+	}
+	if hasGuild {
+		return ErrAlreadyInGuild
+	}
+
+	// Create application
+	application := &models.GuildApplication{
+		GuildID: guildID,
+		PlayerID: targetID,
+		Message:  "Invited by " + fmt.Sprintf("%d", inviterID),
+		Status:   "pending",
+	}
+
+	return s.db.Create(application).Error
+}
+
+// TransferLeadership transfers guild leadership to another member
+func (s *GuildService) TransferLeadership(ctx context.Context, guildID, currentMasterID, newMasterID uint64) error {
+	var guild models.Guild
+	if err := s.db.First(&guild, guildID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGuildNotFound
+		}
+		return err
+	}
+
+	// Only current master can transfer
+	if guild.MasterID != currentMasterID {
+		return ErrInsufficientPermission
+	}
+
+	// Check if new master is a guild member
+	var newMasterMember models.GuildMember
+	err := s.db.Where("guild_id = ? AND player_id = ?", guildID, newMasterID).First(&newMasterMember).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotGuildMember
+		}
+		return err
+	}
+
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		// Update guild master
+		if err := tx.Model(&guild).Update("master_id", newMasterID).Error; err != nil {
+			return err
+		}
+
+		// Update old master role to officer
+		if err := tx.Model(&models.GuildMember{}).
+			Where("guild_id = ? AND player_id = ?", guildID, currentMasterID).
+			Update("role", models.GuildRoleOfficer).Error; err != nil {
+			return err
+		}
+
+		// Update new master role
+		if err := tx.Model(&models.GuildMember{}).
+			Where("guild_id = ? AND player_id = ?", guildID, newMasterID).
+			Update("role", models.GuildRoleMaster).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+// UpdateGuildInfo updates guild information
+func (s *GuildService) UpdateGuildInfo(ctx context.Context, guildID, operatorID uint64, name, description, icon string) error {
+	canManage, err := s.CanManageMembers(ctx, guildID, operatorID)
+	if err != nil {
+		return err
+	}
+	if !canManage {
+		return ErrInsufficientPermission
+	}
+
+	updates := map[string]any{}
+	if name != "" {
+		updates["name"] = name
+	}
+	if description != "" {
+		updates["description"] = description
+	}
+	if icon != "" {
+		updates["icon"] = icon
+	}
+
+	if len(updates) == 0 {
+		return nil
+	}
+
+	return s.db.Model(&models.Guild{}).Where("id = ?", guildID).Updates(updates).Error
+}
+
+// ListGuilds lists guilds with pagination
+func (s *GuildService) ListGuilds(ctx context.Context, page, pageSize int) ([]models.Guild, int64, error) {
+	var total int64
+	var guilds []models.Guild
+
+	// Count total
+	if err := s.db.Model(&models.Guild{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// Pagination
+	offset := (page - 1) * pageSize
+	err := s.db.Offset(offset).Limit(pageSize).Order("level DESC, id ASC").Find(&guilds).Error
+	return guilds, total, err
+}
