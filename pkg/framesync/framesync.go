@@ -150,7 +150,7 @@ func (fs *FrameSync) broadcastFrame(frame int64, inputs []common.InputCommand) {
 		Type:   common.WSMsgFrame,
 		RoomID: fs.session.GetRoomID(),
 		Frame:  frame,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"frame":  frame,
 			"inputs": inputs,
 			"count":  len(inputs),

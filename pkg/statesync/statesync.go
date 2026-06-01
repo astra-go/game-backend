@@ -219,7 +219,7 @@ func (ss *StateSync) broadcastFullSync(frame int64) {
 		allStates = append(allStates, *state)
 	}
 	
-	msg := map[string]interface{}{
+	msg := map[string]any{
 		"type":   "full_sync",
 		"frame":  frame,
 		"states": allStates,

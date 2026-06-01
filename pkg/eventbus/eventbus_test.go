@@ -1,6 +1,7 @@
 package eventbus
 
 import (
+	"container/heap"
 	"encoding/json"
 	"errors"
 	"sync"
@@ -101,8 +102,9 @@ func (m *mockConn) getPublished() []publishedMsg {
 
 func newEventBusWithMock(mc *mockConn) *EventBus {
 	return &EventBus{
-		conn:   mc,
-		logger: zap.NewNop(),
+		conn:     mc,
+		logger:   zap.NewNop(),
+		priQueue: &priorityQueue{},
 	}
 }
 
@@ -433,4 +435,157 @@ func TestEventBus_PredefinedSubjects(t *testing.T) {
 			assert.NotEmpty(t, subj)
 		})
 	}
+}
+
+// ========== 优先级队列测试 ==========
+
+func TestPriorityQueue_Basic(t *testing.T) {
+	pq := &priorityQueue{}
+	heap.Init(pq)
+	
+	// 添加不同优先级的事件
+	heap.Push(pq, &prioritizedEvent{
+		subject:   "test.low",
+		priority:  PriorityLow,
+		timestamp: time.Now(),
+	})
+	heap.Push(pq, &prioritizedEvent{
+		subject:   "test.high",
+		priority:  PriorityHigh,
+		timestamp: time.Now(),
+	})
+	heap.Push(pq, &prioritizedEvent{
+		subject:   "test.urgent",
+		priority:  PriorityUrgent,
+		timestamp: time.Now(),
+	})
+	
+	// 紧急优先级应该先出队
+	event := heap.Pop(pq).(*prioritizedEvent)
+	assert.Equal(t, "test.urgent", event.subject)
+	assert.Equal(t, PriorityUrgent, event.priority)
+	
+	// 然后是高优先级
+	event = heap.Pop(pq).(*prioritizedEvent)
+	assert.Equal(t, "test.high", event.subject)
+	assert.Equal(t, PriorityHigh, event.priority)
+	
+	// 最后是低优先级
+	event = heap.Pop(pq).(*prioritizedEvent)
+	assert.Equal(t, "test.low", event.subject)
+	assert.Equal(t, PriorityLow, event.priority)
+}
+
+func TestPriorityQueue_SamePriority(t *testing.T) {
+	pq := &priorityQueue{}
+	heap.Init(pq)
+	
+	now := time.Now()
+	
+	// 添加相同优先级但不同时间的事件
+	heap.Push(pq, &prioritizedEvent{
+		subject:   "test.first",
+		priority:  PriorityNormal,
+		timestamp: now,
+	})
+	heap.Push(pq, &prioritizedEvent{
+		subject:   "test.second",
+		priority:  PriorityNormal,
+		timestamp: now.Add(time.Second),
+	})
+	heap.Push(pq, &prioritizedEvent{
+		subject:   "test.third",
+		priority:  PriorityNormal,
+		timestamp: now.Add(2 * time.Second),
+	})
+	
+	// 相同优先级应该按时间顺序（FIFO）
+	event := heap.Pop(pq).(*prioritizedEvent)
+	assert.Equal(t, "test.first", event.subject)
+	
+	event = heap.Pop(pq).(*prioritizedEvent)
+	assert.Equal(t, "test.second", event.subject)
+	
+	event = heap.Pop(pq).(*prioritizedEvent)
+	assert.Equal(t, "test.third", event.subject)
+}
+
+func TestEventBus_PublishWithPriority(t *testing.T) {
+	mc := &mockConn{}
+	eb := newEventBusWithMock(mc)
+	
+	// 测试发布高优先级事件
+	err := eb.PublishWithPriority("test.priority", map[string]string{"key": "value"}, PriorityHigh)
+	assert.NoError(t, err)
+	
+	// 验证事件进入优先级队列
+	assert.Equal(t, 1, eb.priQueue.Len())
+	
+	// 处理队列
+	eb.processPriorityQueue()
+	
+	// 验证事件被发布
+	published := mc.getPublished()
+	assert.Len(t, published, 1)
+	assert.Equal(t, "test.priority", published[0].subject)
+}
+
+func TestEventBus_PriorityConstants(t *testing.T) {
+	assert.Equal(t, 0, int(PriorityLow))
+	assert.Equal(t, 1, int(PriorityNormal))
+	assert.Equal(t, 2, int(PriorityHigh))
+	assert.Equal(t, 3, int(PriorityUrgent))
+}
+
+// ========== 跨服务事件测试 ==========
+
+func TestCrossServiceEvent_Structure(t *testing.T) {
+	event := CrossServiceEvent{
+		SourceService: "game-backend",
+		TargetService: "match-service",
+		EventType:    "match_success",
+		Payload:      map[string]interface{}{"room_id": "123", "players": []string{"player1", "player2"}},
+		Timestamp:     time.Now(),
+	}
+	
+	assert.Equal(t, "game-backend", event.SourceService)
+	assert.Equal(t, "match-service", event.TargetService)
+	assert.Equal(t, "match_success", event.EventType)
+	assert.NotNil(t, event.Payload)
+	assert.False(t, event.Timestamp.IsZero())
+}
+
+func TestEventBus_PublishCrossService(t *testing.T) {
+	mc := &mockConn{}
+	eb := newEventBusWithMock(mc)
+	
+	err := eb.PublishCrossService("match-service", "match_success", map[string]string{"room_id": "123"})
+	assert.NoError(t, err)
+	
+	published := mc.getPublished()
+	assert.Len(t, published, 1)
+	assert.Equal(t, "cross.match-service.match_success", published[0].subject)
+	
+	// 验证payload
+	var event CrossServiceEvent
+	err = json.Unmarshal(published[0].data, &event)
+	assert.NoError(t, err)
+	assert.Equal(t, "game-backend", event.SourceService)
+	assert.Equal(t, "match-service", event.TargetService)
+	assert.Equal(t, "match_success", event.EventType)
+}
+
+func TestEventBus_SubscribeCrossService(t *testing.T) {
+	mc := &mockConn{}
+	eb := newEventBusWithMock(mc)
+	
+	err := eb.SubscribeCrossService("room-service", "player_join", func(msg *nats.Msg) {
+		// 处理函数
+	})
+	assert.NoError(t, err)
+	
+	// 验证订阅被创建
+	subs := mc.getSubscriptions()
+	assert.Len(t, subs, 1)
+	assert.Equal(t, "cross.room-service.player_join", subs[0].subject)
 }

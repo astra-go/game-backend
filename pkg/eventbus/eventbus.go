@@ -1,6 +1,7 @@
 package eventbus
 
 import (
+	"container/heap"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -9,6 +10,60 @@ import (
 	"github.com/nats-io/nats.go"
 	"go.uber.org/zap"
 )
+
+// Priority 事件优先级
+type Priority int
+
+const (
+	PriorityLow    Priority = 0 // 低优先级
+	PriorityNormal Priority = 1 // 普通优先级（默认）
+	PriorityHigh   Priority = 2 // 高优先级
+	PriorityUrgent Priority = 3 // 紧急优先级
+)
+
+// prioritizedEvent 带优先级的事件
+type prioritizedEvent struct {
+	subject   string
+	data      []byte
+	priority  Priority
+	timestamp time.Time
+	index     int // heap索引
+}
+
+// priorityQueue 优先级队列（最小堆）
+type priorityQueue []*prioritizedEvent
+
+func (pq priorityQueue) Len() int { return len(pq) }
+
+func (pq priorityQueue) Less(i, j int) bool {
+	// 优先级高的先出队（Priority值大的）
+	if pq[i].priority == pq[j].priority {
+		return pq[i].timestamp.Before(pq[j].timestamp)
+	}
+	return pq[i].priority > pq[j].priority
+}
+
+func (pq priorityQueue) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+	pq[i].index = i
+	pq[j].index = j
+}
+
+func (pq *priorityQueue) Push(x interface{}) {
+	n := len(*pq)
+	item := x.(*prioritizedEvent)
+	item.index = n
+	*pq = append(*pq, item)
+}
+
+func (pq *priorityQueue) Pop() interface{} {
+	old := *pq
+	n := len(old)
+	item := old[n-1]
+	item.index = -1
+	*pq = old[0 : n-1]
+	return item
+}
 
 // Conn NATS连接接口（用于解耦和测试）
 type Conn interface {
@@ -21,9 +76,11 @@ type Conn interface {
 
 // EventBus 事件总线封装（基于NATS）
 type EventBus struct {
-	conn   Conn
-	logger *zap.Logger
-	subs   sync.Map // subject -> subscription
+	conn     Conn
+	logger   *zap.Logger
+	subs     sync.Map     // subject -> subscription
+	priQueue *priorityQueue // 优先级队列
+	queueMu  sync.Mutex    // 队列操作锁
 }
 
 // NewEventBus 创建事件总线
@@ -46,8 +103,9 @@ func NewEventBus(url string, logger *zap.Logger) (*EventBus, error) {
 	}
 	
 	return &EventBus{
-		conn:   nc,
-		logger: logger,
+		conn:     nc,
+		logger:   logger,
+		priQueue: &priorityQueue{},
 	}, nil
 }
 
@@ -73,6 +131,54 @@ func (eb *EventBus) Publish(subject string, data interface{}) error {
 	)
 	
 	return nil
+}
+
+// PublishWithPriority 发布带优先级的事件
+func (eb *EventBus) PublishWithPriority(subject string, data interface{}, priority Priority) error {
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("序列化失败: %w", err)
+	}
+	
+	event := &prioritizedEvent{
+		subject:   subject,
+		data:      payload,
+		priority:  priority,
+		timestamp: time.Now(),
+	}
+	
+	eb.queueMu.Lock()
+	heap.Push(eb.priQueue, event)
+	eb.queueMu.Unlock()
+	
+	eb.logger.Debug("优先级事件入队",
+		zap.String("subject", subject),
+		zap.Int("priority", int(priority)),
+		zap.Int("queue_size", eb.priQueue.Len()),
+	)
+	
+	// 异步处理优先级队列
+	go eb.processPriorityQueue()
+	
+	return nil
+}
+
+// processPriorityQueue 处理优先级队列
+func (eb *EventBus) processPriorityQueue() {
+	eb.queueMu.Lock()
+	defer eb.queueMu.Unlock()
+	
+	for eb.priQueue.Len() > 0 {
+		event := heap.Pop(eb.priQueue).(*prioritizedEvent)
+		
+		err := eb.conn.Publish(event.subject, event.data)
+		if err != nil {
+			eb.logger.Error("优先级事件发布失败",
+				zap.String("subject", event.subject),
+				zap.Error(err),
+			)
+		}
+	}
 }
 
 // Subscribe 订阅事件
@@ -140,6 +246,35 @@ func (eb *EventBus) Request(subject string, data interface{}, timeout time.Durat
 	}
 	
 	return msg, nil
+}
+
+// CrossServiceEvent 跨服务事件
+type CrossServiceEvent struct {
+	SourceService string      `json:"source_service"`
+	TargetService string      `json:"target_service"`
+	EventType    string      `json:"event_type"`
+	Payload      interface{} `json:"payload"`
+	Timestamp     time.Time   `json:"timestamp"`
+}
+
+// PublishCrossService 发布跨服务事件
+func (eb *EventBus) PublishCrossService(targetService, eventType string, payload interface{}) error {
+	event := CrossServiceEvent{
+		SourceService: "game-backend",
+		TargetService: targetService,
+		EventType:    eventType,
+		Payload:      payload,
+		Timestamp:     time.Now(),
+	}
+	
+	subject := fmt.Sprintf("cross.%s.%s", targetService, eventType)
+	return eb.Publish(subject, event)
+}
+
+// SubscribeCrossService 订阅跨服务事件
+func (eb *EventBus) SubscribeCrossService(targetService, eventType string, handler func(msg *nats.Msg)) error {
+	subject := fmt.Sprintf("cross.%s.%s", targetService, eventType)
+	return eb.Subscribe(subject, handler)
 }
 
 // Close 关闭连接

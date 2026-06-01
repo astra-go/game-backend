@@ -83,6 +83,317 @@ type PlayerMatchInfo struct {
 	MMR       int32     `json:"mmr"`
 	EnqueueAt int64     `json:"enqueue_at"`
 	Mode      string    `json:"mode"`
+	IsRanked  bool      `json:"is_ranked"` // 是否排位模式
+}
+
+// RankTier 排位等级
+type RankTier string
+
+const (
+	RankBronze   RankTier = "bronze"
+	RankSilver   RankTier = "silver"
+	RankGold     RankTier = "gold"
+	RankPlatinum RankTier = "platinum"
+	RankDiamond RankTier = "diamond"
+	RankMaster   RankTier = "master"
+	RankGrandmaster RankTier = "grandmaster"
+)
+
+// RankInfo 排位信息
+type RankInfo struct {
+	Tier        RankTier `json:"tier"`
+	Division    int      `json:"division"` // 段位小级（1-4）
+	LP          int      `json:"lp"` // 胜点（League Points）
+	Wins        int      `json:"wins"`
+	Losses      int      `json:"losses"`
+	MMR         int32    `json:"mmr"`
+	SeasonID    string   `json:"season_id"`
+}
+
+// ========== ELO/MMR 系统 ==========
+
+// calculateELOUpdate 计算 ELO 变化
+// K: K因子（新手K=40，高手K=10）
+// expectedScore: 期望胜率（0-1）
+// actualScore: 实际得分（1胜，0负，0.5平）
+func calculateELOUpdate(playerMMR, opponentMMR int32, actualScore float64) int32 {
+	// 期望胜率公式: E = 1 / (1 + 10^((opponentMMR - playerMMR) / 400))
+	expectedScore := 1.0 / (1.0 + math.Pow(10, float64(opponentMMR-playerMMR)/400.0))
+	
+	// 动态K因子
+	var K float64
+	switch {
+	case playerMMR < 1000:
+		K = 40.0 // 新手
+	case playerMMR < 2000:
+		K = 20.0 // 中等
+	default:
+		K = 10.0 // 高手
+	}
+	
+	// ELO变化 = K * (实际得分 - 期望胜率)
+	change := int32(K * (actualScore - expectedScore))
+	
+	// 防止变化过大
+	if change > 50 {
+		change = 50
+	} else if change < -50 {
+		change = -50
+	}
+	
+	return change
+}
+
+// calculateMatchMMRChange 计算比赛后的MMR变化
+func (m *MatchComponent) calculateMatchMMRChange(players []string, winners []string) map[string]int32 {
+	changes := make(map[string]int32)
+	
+	// 计算平均MMR
+	var totalMMR int32
+	for _, playerID := range players {
+		info, err := m.GetPlayerRankInfo(playerID)
+		if err != nil {
+			continue
+		}
+		totalMMR += info.MMR
+	}
+	averageMMR := totalMMR / int32(len(players))
+	
+	// 计算胜负
+	winnerSet := make(map[string]bool)
+	for _, w := range winners {
+		winnerSet[w] = true
+	}
+	
+	// 计算MMR变化
+	for _, playerID := range players {
+		info, err := m.GetPlayerRankInfo(playerID)
+		if err != nil {
+			changes[playerID] = 0
+			continue
+		}
+		
+		// 确定实际得分
+		var actualScore float64
+		if winnerSet[playerID] {
+			actualScore = 1.0 // 胜利
+		} else {
+			actualScore = 0.0 // 失败
+		}
+		
+		// 计算MMR变化（以平均MMR作为对手）
+		change := calculateELOUpdate(info.MMR, averageMMR, actualScore)
+		changes[playerID] = change
+	}
+	
+	return changes
+}
+
+// UpdatePlayerMMRAfterMatch 比赛后更新玩家MMR
+func (m *MatchComponent) UpdatePlayerMMRAfterMatch(playerID string, mmrChange int32, won bool) error {
+	// 获取当前排位信息
+	info, err := m.GetPlayerRankInfo(playerID)
+	if err != nil {
+		return err
+	}
+	
+	// 更新MMR
+	info.MMR += mmrChange
+	if info.MMR < 0 {
+		info.MMR = 0
+	}
+	
+	// 更新胜负场
+	if won {
+		info.Wins++
+	} else {
+		info.Losses++
+	}
+	
+	// 更新LP（胜点）
+	info.LP += int(mmrChange)
+	if info.LP < 0 {
+		info.LP = 0
+	}
+	
+	// 检查晋级/降级
+	m.checkRankPromotion(info)
+	
+	// 保存到Redis
+	return m.SavePlayerRankInfo(playerID, info)
+}
+
+// checkRankPromotion 检查排位晋级/降级
+func (m *MatchComponent) checkRankPromotion(info *RankInfo) {
+	// 简化的晋级逻辑：LP达到100则晋级到下一小级
+	if info.LP >= 100 {
+		info.LP -= 100
+		info.Division++
+		
+		// 如果Division超过4，晋升到下一大段
+		if info.Division > 4 {
+			info.Division = 1
+			info.Tier = m.getNextTier(info.Tier)
+		}
+	}
+	
+	// LP为0且连败可能降级（简化：不实现）
+}
+
+// getNextTier 获取下一大段
+func (m *MatchComponent) getNextTier(current RankTier) RankTier {
+	switch current {
+	case RankBronze:
+		return RankSilver
+	case RankSilver:
+		return RankGold
+	case RankGold:
+		return RankPlatinum
+	case RankPlatinum:
+		return RankDiamond
+	case RankDiamond:
+		return RankMaster
+	case RankMaster:
+		return RankGrandmaster
+	default:
+		return RankGrandmaster
+	}
+}
+
+// GetPlayerRankInfo 获取玩家排位信息
+func (m *MatchComponent) GetPlayerRankInfo(playerID string) (*RankInfo, error) {
+	key := fmt.Sprintf("rank:%s", playerID)
+	
+	data, err := m.redis.Get(ctx, key).Result()
+	if err != nil {
+		// 如果没有排位信息，创建新的
+		return &RankInfo{
+			Tier:     RankBronze,
+			Division: 1,
+			LP:       0,
+			Wins:     0,
+			Losses:   0,
+			MMR:      1000, // 初始MMR
+		}, nil
+	}
+	
+	var info RankInfo
+	if err := json.Unmarshal([]byte(data), &info); err != nil {
+		return nil, err
+	}
+	
+	return &info, nil
+}
+
+// SavePlayerRankInfo 保存玩家排位信息
+func (m *MatchComponent) SavePlayerRankInfo(playerID string, info *RankInfo) error {
+	key := fmt.Sprintf("rank:%s", playerID)
+	
+	data, err := json.Marshal(info)
+	if err != nil {
+		return err
+	}
+	
+	return m.redis.Set(ctx, key, string(data), 0).Err()
+}
+
+// ========== 排位匹配 ==========
+
+// EnqueueRanked 加入排位匹配队列
+func (m *MatchComponent) EnqueueRanked(playerID string, mmr int32) error {
+	return m.Enqueue(playerID, common.GameMode1v1, mmr)
+}
+
+// ========== 快速匹配 ==========
+
+// EnqueueQuick 加入快速匹配队列（MMR范围更宽松）
+func (m *MatchComponent) EnqueueQuick(playerID string, mmr int32) error {
+	// 快速匹配使用更宽松的MMR范围
+	// 通过修改config实现
+	oldDelta := m.config.MMRDeltaInitial
+	m.config.MMRDeltaInitial = 200 // 更大的初始范围
+	
+	err := m.Enqueue(playerID, common.GameModeCasual, mmr)
+	
+	// 恢复配置
+	m.config.MMRDeltaInitial = oldDelta
+	
+	return err
+}
+
+// ========== 自定义房间匹配 ==========
+
+// CustomRoomMatch 自定义房间匹配（不直接使用MMR）
+type CustomRoomMatch struct {
+	RoomID   string   `json:"room_id"`
+	Password string   `json:"password"`
+	Mode     string   `json:"mode"`
+	MaxPlayers int    `json:"max_players"`
+	CurrentPlayers []string `json:"current_players"`
+}
+
+// JoinCustomRoom 加入自定义房间
+func (m *MatchComponent) JoinCustomRoom(playerID, roomID, password string) error {
+	// 这里应该调用RoomComponent的API
+	// 简化实现：只记录匹配信息
+	
+	// 验证密码（如果有）
+	// ...
+	
+	// 加入房间逻辑
+	m.logger.Info("玩家加入自定义房间",
+		zap.String("player_id", playerID),
+		zap.String("room_id", roomID),
+	)
+	
+	return nil
+}
+
+// ========== 匹配取消机制（已有Dequeue） ==========
+
+// CancelMatch 取消匹配（别名，更语义化）
+func (m *MatchComponent) CancelMatch(playerID string) error {
+	return m.Dequeue(playerID)
+}
+
+// ========== 匹配质量评估 ==========
+
+// evaluateMatchQuality 评估匹配质量（0-1，1最高）
+func (m *MatchComponent) evaluateMatchQuality(players []string) float64 {
+	if len(players) == 0 {
+		return 0.0
+	}
+	
+	// 获取所有玩家的MMR
+	var totalMMR float64
+	var mmrs []float64
+	for _, playerID := range players {
+		info, err := m.GetPlayerRankInfo(playerID)
+		if err != nil {
+			continue
+		}
+		mmrs = append(mmrs, float64(info.MMR))
+		totalMMR += float64(info.MMR)
+	}
+	
+	if len(mmrs) == 0 {
+		return 0.0
+	}
+	
+	// 计算标准差
+	average := totalMMR / float64(len(mmrs))
+	var variance float64
+	for _, mmr := range mmrs {
+		diff := mmr - average
+		variance += diff * diff
+	}
+	variance /= float64(len(mmrs))
+	stdDev := math.Sqrt(variance)
+	
+	// 质量 = 1 / (1 + 标准差/100)
+	quality := 1.0 / (1.0 + stdDev/100.0)
+	
+	return quality
 }
 
 // Enqueue 玩家加入匹配队列

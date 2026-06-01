@@ -575,7 +575,7 @@ func TestFrameSync_SerializeBroadcastMessage(t *testing.T) {
 		Type:   common.WSMsgFrame,
 		RoomID: session.GetRoomID(),
 		Frame:  0,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"frame":  0,
 			"inputs": inputs,
 			"count":  len(inputs),

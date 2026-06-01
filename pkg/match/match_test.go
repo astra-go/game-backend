@@ -478,3 +478,295 @@ func TestProcessTimeout(t *testing.T) {
 	// 可以改用 fake clock 库如 github.com/benbjohnson/clock
 	t.Skip("需要模拟时间进行测试")
 }
+// ========== ELO/MMR 系统测试 ==========
+
+func TestCalculateELOUpdate(t *testing.T) {
+	tests := []struct {
+		name           string
+		playerMMR      int32
+		opponentMMR   int32
+		actualScore    float64 // 1.0胜, 0.0负, 0.5平
+		expectNonZero  bool
+	}{
+		{
+			name:          "低MMR玩家击败高MMR玩家，获得大量分",
+			playerMMR:     1000,
+			opponentMMR:  2000,
+			actualScore:   1.0,
+			expectNonZero: true,
+		},
+		{
+			name:          "高MMR玩家击败低MMR玩家，获得少量分",
+			playerMMR:     2000,
+			opponentMMR:  1000,
+			actualScore:   1.0,
+			expectNonZero: false,
+		},
+		{
+			name:          "平局",
+			playerMMR:     1500,
+			opponentMMR:  1500,
+			actualScore:   0.5,
+			expectNonZero: false, // 期望分0.5，变化应该接近0
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			change := calculateELOUpdate(tt.playerMMR, tt.opponentMMR, tt.actualScore)
+			
+			if tt.expectNonZero {
+				assert.NotZero(t, change)
+			} else {
+				// 平局变化应该很小
+				assert.True(t, change >= -5 && change <= 5)
+			}
+			
+			// 验证变化在合理范围内
+			assert.True(t, change >= -50 && change <= 50)
+		})
+	}
+}
+
+func TestCalculateMatchMMRChange(t *testing.T) {
+	mc, mr := setupTestMatchComponent(t)
+	defer mr.Close()
+	
+	// 设置测试玩家的排位信息
+	players := []string{"player1", "player2", "player3", "player4"}
+	
+	for i, playerID := range players {
+		info := &RankInfo{
+			Tier:  RankBronze,
+			Division: 1,
+			LP:    0,
+			Wins:  0,
+			Losses: 0,
+			MMR:   1000 + int32(i*100), // 1000, 1100, 1200, 1300
+		}
+		mc.SavePlayerRankInfo(playerID, info)
+	}
+	
+	winners := []string{"player1", "player2"}
+	
+	changes := mc.calculateMatchMMRChange(players, winners)
+	
+	assert.Equal(t, len(players), len(changes))
+	
+	// 胜者应该获得正分
+	for _, winner := range winners {
+		assert.Greater(t, changes[winner], int32(0))
+	}
+	
+	// 负者应该获得负分或0
+	losers := []string{"player3", "player4"}
+	for _, loser := range losers {
+		assert.LessOrEqual(t, changes[loser], int32(0))
+	}
+}
+
+func TestUpdatePlayerMMRAfterMatch(t *testing.T) {
+	mc, mr := setupTestMatchComponent(t)
+	defer mr.Close()
+	
+	playerID := "test_player"
+	
+	// 初始化排位信息
+	info := &RankInfo{
+		Tier:     RankBronze,
+		Division: 1,
+		LP:       50,
+		Wins:     5,
+		Losses:   3,
+		MMR:      1200,
+	}
+	mc.SavePlayerRankInfo(playerID, info)
+	
+	// 测试胜利
+	err := mc.UpdatePlayerMMRAfterMatch(playerID, 25, true)
+	assert.NoError(t, err)
+	
+	updatedInfo, err := mc.GetPlayerRankInfo(playerID)
+	assert.NoError(t, err)
+	assert.Equal(t, int32(1225), updatedInfo.MMR)
+	assert.Equal(t, 6, updatedInfo.Wins)
+	assert.Equal(t, 75, updatedInfo.LP) // 50 + 25
+	
+	// 测试失败
+	err = mc.UpdatePlayerMMRAfterMatch(playerID, -20, false)
+	assert.NoError(t, err)
+	
+	updatedInfo2, err := mc.GetPlayerRankInfo(playerID)
+	assert.NoError(t, err)
+	assert.Equal(t, int32(1205), updatedInfo2.MMR)
+	assert.Equal(t, 4, updatedInfo2.Losses)
+	assert.Equal(t, 55, updatedInfo2.LP) // 75 - 20
+}
+
+func TestGetPlayerRankInfo(t *testing.T) {
+	mc, mr := setupTestMatchComponent(t)
+	defer mr.Close()
+	
+	playerID := "test_player"
+	
+	// 测试获取不存在的玩家（应该返回默认值）
+	info, err := mc.GetPlayerRankInfo(playerID)
+	assert.NoError(t, err)
+	assert.Equal(t, RankBronze, info.Tier)
+	assert.Equal(t, 1, info.Division)
+	assert.Equal(t, 0, info.LP)
+	assert.Equal(t, int32(1000), info.MMR)
+	
+	// 测试获取已存在的玩家
+	info2 := &RankInfo{
+		Tier:     RankSilver,
+		Division: 2,
+		LP:       75,
+		Wins:     10,
+		Losses:   5,
+		MMR:      1500,
+	}
+	mc.SavePlayerRankInfo(playerID, info2)
+	
+	info3, err := mc.GetPlayerRankInfo(playerID)
+	assert.NoError(t, err)
+	assert.Equal(t, RankSilver, info3.Tier)
+	assert.Equal(t, 2, info3.Division)
+	assert.Equal(t, 75, info3.LP)
+	assert.Equal(t, int32(1500), info3.MMR)
+}
+
+// ========== 排位匹配测试 ==========
+
+func TestEnqueueRanked(t *testing.T) {
+	mc, mr := setupTestMatchComponent(t)
+	defer mr.Close()
+	
+	playerID := "player1"
+	mmr := int32(1500)
+	
+	err := mc.EnqueueRanked(playerID, mmr)
+	assert.NoError(t, err)
+	
+	// 验证是否加入了1v1队列
+	queueKey := "match:queue:1v1"
+	exists, err := mc.redis.ZScore(ctx, queueKey, playerID).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, float64(mmr), exists)
+}
+
+// ========== 快速匹配测试 ==========
+
+func TestEnqueueQuick(t *testing.T) {
+	mc, mr := setupTestMatchComponent(t)
+	defer mr.Close()
+	
+	playerID := "player1"
+	mmr := int32(1500)
+	
+	// 记录原始配置
+	originalDelta := mc.config.MMRDeltaInitial
+	
+	err := mc.EnqueueQuick(playerID, mmr)
+	assert.NoError(t, err)
+	
+	// 验证配置是否已恢复
+	assert.Equal(t, originalDelta, mc.config.MMRDeltaInitial)
+	
+	// 验证是否加入了Casual队列
+	queueKey := "match:queue:" + string(common.GameModeCasual)
+	exists, err := mc.redis.ZScore(ctx, queueKey, playerID).Result()
+	assert.NoError(t, err)
+	assert.Equal(t, float64(mmr), exists)
+}
+
+// ========== 自定义房间匹配测试 ==========
+
+func TestJoinCustomRoom(t *testing.T) {
+	mc, mr := setupTestMatchComponent(t)
+	defer mr.Close()
+	
+	playerID := "player1"
+	roomID := "custom_room_123"
+	password := "secret"
+	
+	err := mc.JoinCustomRoom(playerID, roomID, password)
+	assert.NoError(t, err)
+	
+	// 简化实现，只验证不报错
+	// 实际应该验证房间存在、密码正确等
+}
+
+// ========== 匹配取消机制测试 ==========
+
+func TestCancelMatch(t *testing.T) {
+	mc, mr := setupTestMatchComponent(t)
+	defer mr.Close()
+	ctx := context.Background()
+	
+	playerID := "player1"
+	mode := common.GameMode1v1
+	mmr := int32(1500)
+	
+	// 先加入队列
+	err := mc.Enqueue(playerID, mode, mmr)
+	assert.NoError(t, err)
+	
+	// 取消匹配
+	err = mc.CancelMatch(playerID)
+	assert.NoError(t, err)
+	
+	// 验证是否已从队列移除
+	queueKey := "match:queue:" + string(mode)
+	_, zerr := mc.redis.ZRank(ctx, queueKey, playerID).Result()
+	assert.True(t, zerr != nil) // redis.Nil error 表示不存在
+	
+	// 验证是否已从processing移除
+	exists, _ := mc.redis.HExists(ctx, "match:processing", playerID).Result()
+	assert.False(t, exists)
+}
+
+// ========== 匹配质量评估测试 ==========
+
+func TestEvaluateMatchQuality(t *testing.T) {
+	mc, mr := setupTestMatchComponent(t)
+	defer mr.Close()
+	
+	// 先设置测试玩家的排位信息
+	players := []string{"player1", "player2", "player3", "player4"}
+	
+	for i, playerID := range players {
+		info := &RankInfo{
+			Tier:  RankBronze,
+			Division: 1,
+			LP:    0,
+			Wins:  0,
+			Losses: 0,
+			MMR:   1000 + int32(i*10), // 1000, 1010, 1020, 1030 - MMR很接近
+		}
+		mc.SavePlayerRankInfo(playerID, info)
+	}
+	
+	quality := mc.evaluateMatchQuality(players)
+	
+	// MMR接近的玩家，质量应该较高
+	assert.Greater(t, quality, 0.5)
+	assert.LessOrEqual(t, quality, 1.0)
+	
+	// 测试空列表
+	qualityEmpty := mc.evaluateMatchQuality([]string{})
+	assert.Equal(t, 0.0, qualityEmpty)
+	
+	// 测试MMR差异大的情况
+	players2 := []string{"player1", "player2"}
+	
+	info1 := &RankInfo{MMR: 1000}
+	info2 := &RankInfo{MMR: 2000}
+	mc.SavePlayerRankInfo("player1", info1)
+	mc.SavePlayerRankInfo("player2", info2)
+	
+	qualityDiff := mc.evaluateMatchQuality(players2)
+	
+	// MMR差异大，质量应该较低
+	assert.Less(t, qualityDiff, quality)
+}
