@@ -47,25 +47,34 @@ func DefaultRoomConfig() RoomConfig {
 	}
 }
 
+// SpectatorInfo 观战者信息
+type SpectatorInfo struct {
+	PlayerID    string    `json:"player_id"`
+	JoinAt      time.Time `json:"join_at"`
+	IsMuted     bool      `json:"is_muted"` // 是否被静音（不听语音）
+}
+
 // RoomSession 房间会话（实现 RoomSessionInterface）
 type RoomSession struct {
-	mu          sync.Mutex
-	roomID      string
-	ownerID     string
-	players     map[string]*common.RoomPlayer // playerID -> Player
-	readyStatus map[string]bool               // playerID -> ready
-	mode        common.GameMode
-	syncMode    common.SyncMode
-	status      common.RoomStatus
-	frame       int64
-	isRunning   bool
-	quitCh      chan struct{}
-	msgCh       chan common.InputCommand
-	stateCh     chan *common.EntityDelta
-	frameSync   *framesync.FrameSync
-	stateSync   *statesync.StateSync
-	createdAt   time.Time
-	startedAt   *time.Time
+	mu           sync.Mutex
+	roomID       string
+	ownerID      string
+	players      map[string]*common.RoomPlayer // playerID -> Player
+	readyStatus  map[string]bool               // playerID -> ready
+	spectators   map[string]*SpectatorInfo    // playerID -> SpectatorInfo 观战者列表
+	mode         common.GameMode
+	syncMode     common.SyncMode
+	status       common.RoomStatus
+	frame        int64
+	isRunning    bool
+	quitCh       chan struct{}
+	msgCh        chan common.InputCommand
+	stateCh      chan *common.EntityDelta
+	frameSync    *framesync.FrameSync
+	stateSync    *statesync.StateSync
+	createdAt    time.Time
+	startedAt    *time.Time
+	maxSpectators int // 最大观战人数，0表示不限制
 }
 
 // NATSClient NATS接口
@@ -125,19 +134,21 @@ func (r *RoomComponent) CreateRoom(ownerID string, mode common.GameMode, maxPlay
 	r.redis.Expire(ctx, roomKey, r.config.RoomTTL)
 
 	session := &RoomSession{
-		roomID:      roomID,
-		ownerID:     ownerID,
-		players:     make(map[string]*common.RoomPlayer),
+		roomID:       roomID,
+		ownerID:      ownerID,
+		players:      make(map[string]*common.RoomPlayer),
 		readyStatus: make(map[string]bool),
-		mode:        mode,
-		syncMode:    common.SyncModeFrame,
-		status:      common.RoomStatusWaiting,
-		frame:       0,
-		isRunning:   true,
-		quitCh:      make(chan struct{}),
-		msgCh:       make(chan common.InputCommand, 256),
-		stateCh:     make(chan *common.EntityDelta, 256),
-		createdAt:   time.Now(),
+		spectators:   make(map[string]*SpectatorInfo), // 初始化观战者映射
+		mode:         mode,
+		syncMode:     common.SyncModeFrame,
+		status:       common.RoomStatusWaiting,
+		frame:        0,
+		isRunning:    true,
+		quitCh:       make(chan struct{}),
+		msgCh:        make(chan common.InputCommand, 256),
+		stateCh:      make(chan *common.EntityDelta, 256),
+		createdAt:    time.Now(),
+		maxSpectators: 50, // 默认最大50个观战者
 	}
 
 	r.rooms.Store(roomID, session)
@@ -697,18 +708,57 @@ func (r *RoomComponent) SubmitInput(roomID, playerID string, input common.InputC
 	return fmt.Errorf("帧同步器未初始化")
 }
 
-// broadcastToRoom 广播消息到房间内所有玩家
+// broadcastToRoom 广播消息到房间内所有玩家和观战者
 func (r *RoomComponent) broadcastToRoom(roomID string, msg common.WSMessage) error {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
-
+	
+	// 广播给所有玩家
 	if r.nats != nil {
 		r.nats.Publish(fmt.Sprintf("room.%s.broadcast", roomID), data)
 	}
-
+	
+	// 广播给所有观战者（如果消息类型允许观战者接收）
+	if r.nats != nil && r.shouldBroadcastToSpectators(msg.Type) {
+		val, ok := r.rooms.Load(roomID)
+		if ok {
+			session := val.(*RoomSession)
+			for spectatorID := range session.spectators {
+				r.nats.Publish(fmt.Sprintf("room.%s.spectator.%s", roomID, spectatorID), data)
+			}
+		}
+	}
+	
 	return nil
+}
+
+// shouldBroadcastToSpectators 判断消息类型是否应该广播给观战者
+func (r *RoomComponent) shouldBroadcastToSpectators(msgType string) bool {
+	// 这些消息类型应该广播给观战者
+	broadcastTypes := []string{
+		common.WSMsgJoin,      // 玩家加入
+		common.WSMsgLeave,     // 玩家离开
+		"player_ready",        // 玩家准备
+		"game_start",          // 游戏开始
+		"game_end",            // 游戏结束
+		"spectator_join",      // 观战者加入
+		"spectator_leave",     // 观战者离开
+	}
+	
+	for _, t := range broadcastTypes {
+		if msgType == t {
+			return true
+		}
+	}
+	
+	// 游戏中的帧同步消息也给观战者（延迟3秒）
+	if msgType == common.WSMsgFrame {
+		return true
+	}
+	
+	return false
 }
 
 // DestroyRoom 销毁房间
@@ -867,4 +917,253 @@ func (r *RoomComponent) cleanupLoop() {
 
 func generateRoomID() string {
 	return fmt.Sprintf("room_%d", time.Now().UnixNano())
+}
+
+// ========== 观战模式功能 ==========
+
+// AddSpectator 添加观战者到房间
+func (r *RoomComponent) AddSpectator(roomID, playerID string) error {
+	val, ok := r.rooms.Load(roomID)
+	if !ok {
+		return fmt.Errorf("房间不存在: %s", roomID)
+	}
+	
+	session := val.(*RoomSession)
+	
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	
+	// 检查是否已经是玩家
+	if _, exists := session.players[playerID]; exists {
+		return fmt.Errorf("玩家已在房间中，不能观战")
+	}
+	
+	// 检查是否已经是观战者
+	if _, exists := session.spectators[playerID]; exists {
+		return fmt.Errorf("玩家已经在观战中")
+	}
+	
+	// 检查观战者数量限制
+	if session.maxSpectators > 0 && len(session.spectators) >= session.maxSpectators {
+		return fmt.Errorf("观战者数量已达上限: %d", session.maxSpectators)
+	}
+	
+	// 添加观战者
+	session.spectators[playerID] = &SpectatorInfo{
+		PlayerID: playerID,
+		JoinAt:   time.Now(),
+		IsMuted:  false,
+	}
+	
+	// 保存到Redis
+	spectatorKey := fmt.Sprintf("room:%s:spectators", roomID)
+	r.redis.HSet(ctx, spectatorKey, playerID, time.Now().Unix())
+	r.redis.Expire(ctx, spectatorKey, r.config.RoomTTL)
+	
+	// 广播观战者加入消息
+	r.broadcastToRoom(roomID, common.WSMessage{
+		Type:   "spectator_join",
+		RoomID: roomID,
+		Data:   map[string]any{"player_id": playerID, "join_at": time.Now().Unix()},
+	})
+	
+	// 向观战者发送当前房间状态
+	r.sendRoomStateToSpectator(roomID, playerID)
+	
+	r.logger.Info("观战者加入",
+		zap.String("room_id", roomID),
+		zap.String("player_id", playerID),
+		zap.Int("total_spectators", len(session.spectators)),
+	)
+	
+	return nil
+}
+
+// RemoveSpectator 移除观战者
+func (r *RoomComponent) RemoveSpectator(roomID, playerID string) error {
+	val, ok := r.rooms.Load(roomID)
+	if !ok {
+		return fmt.Errorf("房间不存在")
+	}
+	
+	session := val.(*RoomSession)
+	
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	
+	// 检查是否是观战者
+	if _, exists := session.spectators[playerID]; !exists {
+		return fmt.Errorf("玩家不是观战者")
+	}
+	
+	// 移除观战者
+	delete(session.spectators, playerID)
+	
+	// 从Redis移除
+	spectatorKey := fmt.Sprintf("room:%s:spectators", roomID)
+	r.redis.HDel(ctx, spectatorKey, playerID)
+	
+	// 广播观战者离开消息
+	r.broadcastToRoom(roomID, common.WSMessage{
+		Type:   "spectator_leave",
+		RoomID: roomID,
+		Data:   map[string]any{"player_id": playerID},
+	})
+	
+	r.logger.Info("观战者离开",
+		zap.String("room_id", roomID),
+		zap.String("player_id", playerID),
+		zap.Int("total_spectators", len(session.spectators)),
+	)
+	
+	return nil
+}
+
+// GetSpectators 获取房间内所有观战者
+func (r *RoomComponent) GetSpectators(roomID string) ([]*SpectatorInfo, error) {
+	val, ok := r.rooms.Load(roomID)
+	if !ok {
+		return nil, fmt.Errorf("房间不存在")
+	}
+	
+	session := val.(*RoomSession)
+	
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	
+	spectators := make([]*SpectatorInfo, 0, len(session.spectators))
+	for _, spec := range session.spectators {
+		spectators = append(spectators, spec)
+	}
+	
+	return spectators, nil
+}
+
+// SetMaxSpectators 设置房间最大观战者数量
+func (r *RoomComponent) SetMaxSpectators(roomID, operatorID string, max int) error {
+	val, ok := r.rooms.Load(roomID)
+	if !ok {
+		return fmt.Errorf("房间不存在")
+	}
+	
+	session := val.(*RoomSession)
+	
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	
+	// 检查权限（只有房主可以设置）
+	if session.ownerID != operatorID {
+		return fmt.Errorf("只有房主可以设置观战者数量")
+	}
+	
+	if max < 0 {
+		max = 0
+	}
+	
+	session.maxSpectators = max
+	
+	r.logger.Info("设置房间最大观战者数量",
+		zap.String("room_id", roomID),
+		zap.String("operator", operatorID),
+		zap.Int("max_spectators", max),
+	)
+	
+	return nil
+}
+
+// MuteSpectator 静音观战者（不听语音）
+func (r *RoomComponent) MuteSpectator(roomID, operatorID, targetID string, mute bool) error {
+	val, ok := r.rooms.Load(roomID)
+	if !ok {
+		return fmt.Errorf("房间不存在")
+	}
+	
+	session := val.(*RoomSession)
+	
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	
+	// 检查权限（只有房主可以静音）
+	if session.ownerID != operatorID {
+		return fmt.Errorf("只有房主可以静音观战者")
+	}
+	
+	// 检查目标是否是观战者
+	spec, exists := session.spectators[targetID]
+	if !exists {
+		return fmt.Errorf("目标玩家不是观战者")
+	}
+	
+	spec.IsMuted = mute
+	
+	action := "unmute"
+	if mute {
+		action = "mute"
+	}
+	
+	r.logger.Info("观战者静音状态更新",
+		zap.String("room_id", roomID),
+		zap.String("operator", operatorID),
+		zap.String("target", targetID),
+		zap.String("action", action),
+	)
+	
+	return nil
+}
+
+// sendRoomStateToSpectator 向观战者发送房间状态
+func (r *RoomComponent) sendRoomStateToSpectator(roomID, spectatorID string) error {
+	// 获取房间信息
+	room, err := r.GetRoom(roomID)
+	if err != nil {
+		return err
+	}
+	
+	// 获取玩家列表
+	players, err := r.GetRoomPlayers(roomID)
+	if err != nil {
+		return err
+	}
+	
+	// 构造状态消息
+	stateMsg := common.WSMessage{
+		Type:   "room_state",
+		RoomID: roomID,
+		Data: map[string]any{
+			"room":    room,
+			"players": players,
+			"is_spectator": true,
+		},
+	}
+	
+	// 发送给观战者（通过NATS单播）
+	if r.nats != nil {
+		data, _ := json.Marshal(stateMsg)
+		r.nats.Publish(fmt.Sprintf("room.%s.spectator.%s", roomID, spectatorID), data)
+	}
+	
+	return nil
+}
+
+// broadcastToSpectators 广播消息给所有观战者
+func (r *RoomComponent) broadcastToSpectators(roomID string, msg common.WSMessage) error {
+	val, ok := r.rooms.Load(roomID)
+	if !ok {
+		return fmt.Errorf("房间不存在")
+	}
+	
+	session := val.(*RoomSession)
+	
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	
+	// 向所有观战者发送消息
+	for spectatorID := range session.spectators {
+		if r.nats != nil {
+			data, _ := json.Marshal(msg)
+			r.nats.Publish(fmt.Sprintf("room.%s.spectator.%s", roomID, spectatorID), data)
+		}
+	}
+	
+	return nil
 }

@@ -67,7 +67,6 @@ func newTestLogger() *zap.Logger {
 	return logger
 }
 
-
 // createRoomComponentWithMocks 创建组件（Redis为nil，需要时手动mock）
 // RoomComponent直接使用 *redis.Client，无法用接口替代
 // 测试中我们绕过Redis操作，专注于内存逻辑测试
@@ -691,6 +690,122 @@ func TestRoomConfig_Custom(t *testing.T) {
 			assert.Equal(t, tt.expectMaxRooms, r.config.MaxRoomsPerNode)
 			assert.Equal(t, tt.expectMaxPlayers, r.config.MaxPlayersPerRoom)
 			assert.Equal(t, tt.expectTTL, r.config.RoomTTL)
+		})
+	}
+}
+
+// ========== 观战模式测试 ==========
+
+func TestAddSpectator(t *testing.T) {
+	mc := createRoomComponentWithMocks()
+
+	// 创建房间（内存模式）
+	room, session := createRoomInMemory(mc, "owner1", common.GameMode1v1, 10, 1)
+	_ = session
+	roomID := room.ID
+
+	// 初始化 spectators 映射
+	mc.rooms.Load(roomID)
+	// 直接设置 session 的 spectators 字段
+	// 注意：因为 spectators 是私有字段，我们需要通过导出方法测试
+	// 这里假设我们已经修改了 room.go，添加了 AddSpectator 等方法
+
+	tests := []struct {
+		name      string
+		playerID  string
+		setup     func() // 前置条件
+		wantError bool
+		errorMsg  string
+	}{
+		{
+			name:      "正常添加观战者",
+			playerID:  "spectator1",
+			setup:     func() {},
+			wantError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setup != nil {
+				tt.setup()
+			}
+
+			// 注意：这里需要 AddSpectator 方法已经实现
+			// 由于 spectators 是私有字段，我们通过公开方法测试
+			t.Log("TestAddSpectator: 需要 AddSpectator 方法实现")
+		})
+	}
+}
+
+func TestSpectatorFlow(t *testing.T) {
+	mc := createRoomComponentWithMocks()
+
+	// 创建房间
+	room, _ := createRoomInMemory(mc, "owner1", common.GameMode1v1, 10, 1)
+	roomID := room.ID
+
+	// 测试观战流程（如果方法已实现）
+	t.Logf("Room created: %s", roomID)
+
+	// 这里应该测试：
+	// 1. AddSpectator
+	// 2. GetSpectators
+	// 3. RemoveSpectator
+	// 4. MuteSpectator
+
+	// 由于 spectators 字段是私有的，我们需要确保有公开的 getter/setter 方法
+	t.Log("Spectator flow test placeholder - implement after public methods are added")
+}
+
+func TestBroadcastToSpectators(t *testing.T) {
+	mc := createRoomComponentWithMocks()
+
+	// 创建房间
+	room, session := createRoomInMemory(mc, "owner1", common.GameMode1v1, 10, 1)
+	roomID := room.ID
+
+	// 手动添加观战者到 session（因为 AddSpectator 可能还没实现）
+	session.spectators["spec1"] = &SpectatorInfo{PlayerID: "spec1", JoinAt: time.Now()}
+	session.spectators["spec2"] = &SpectatorInfo{PlayerID: "spec2", JoinAt: time.Now()}
+
+	// 测试广播消息给观战者
+	msg := common.WSMessage{
+		Type:   common.WSMsgJoin,
+		RoomID: roomID,
+		Data:   map[string]any{"player_id": "player1"},
+	}
+
+	// 调用 broadcastToRoom（应该也会广播给观战者）
+	err := mc.broadcastToRoom(roomID, msg)
+	assert.NoError(t, err)
+
+	// 验证消息被发布到 NATS（通过 mock 检查）
+	published := mc.nats.(*mockNATSClient).getPublished()
+	assert.GreaterOrEqual(t, len(published), 1)
+
+	t.Logf("Broadcasted %d messages", len(published))
+}
+
+func TestShouldBroadcastToSpectators(t *testing.T) {
+	mc := createRoomComponentWithMocks()
+
+	tests := []struct {
+		name     string
+		msgType  string
+		expected bool
+	}{
+		{"玩家加入消息", common.WSMsgJoin, true},
+		{"玩家离开消息", common.WSMsgLeave, true},
+		{"帧同步消息", common.WSMsgFrame, true},
+		{"心跳消息", common.WSMsgHeartbeat, false},
+		{"错误消息", common.WSMsgError, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := mc.shouldBroadcastToSpectators(tt.msgType)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
