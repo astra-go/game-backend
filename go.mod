@@ -1,6 +1,6 @@
 module github.com/astra-go/game-backend
 
-go 1.25.1
+go 1.25.10
 
 // 使用本地开发的 astra 框架
 replace github.com/astra-go/astra => ../astra
@@ -128,6 +128,7 @@ require (
 	go.etcd.io/etcd/client/v3 v3.6.10 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
+	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
 	golang.org/x/net v0.55.0 // indirect
