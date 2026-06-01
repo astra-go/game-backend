@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/astra-go/game-backend/pkg/natsclient"
 	"github.com/nats-io/nats.go"
 	"go.uber.org/zap"
 )
@@ -76,7 +77,7 @@ type Conn interface {
 
 // EventBus 事件总线封装（基于NATS）
 type EventBus struct {
-	conn     Conn
+	conn     Conn           // NATS连接（接口，支持mock）
 	logger   *zap.Logger
 	subs     sync.Map     // subject -> subscription
 	priQueue *priorityQueue // 优先级队列
@@ -96,14 +97,28 @@ func NewEventBus(url string, logger *zap.Logger) (*EventBus, error) {
 			logger.Info("NATS重新连接成功")
 		}),
 	}
-	
+
 	nc, err := nats.Connect(url, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("连接NATS失败: %w", err)
 	}
-	
+
 	return &EventBus{
 		conn:     nc,
+		logger:   logger,
+		priQueue: &priorityQueue{},
+	}, nil
+}
+
+// NewEventBusWithClient 创建事件总线（使用 natsclient.Client）
+// 适用于统一使用 natsclient 的场景。底层 conn 仍为 *nats.Conn（通过 client.Raw() 获取）。
+func NewEventBusWithClient(url string, logger *zap.Logger) (*EventBus, error) {
+	client, err := natsclient.New(url)
+	if err != nil {
+		return nil, fmt.Errorf("创建NATS客户端失败: %w", err)
+	}
+	return &EventBus{
+		conn:     client,
 		logger:   logger,
 		priQueue: &priorityQueue{},
 	}, nil
@@ -115,21 +130,24 @@ func (eb *EventBus) Publish(subject string, data interface{}) error {
 	if err != nil {
 		return fmt.Errorf("序列化失败: %w", err)
 	}
-	
-	err = eb.conn.Publish(subject, payload)
-	if err != nil {
+
+	var errPub error
+	if eb.conn != nil {
+		errPub = eb.conn.Publish(subject, payload)
+	}
+	if errPub != nil {
 		eb.logger.Error("发布事件失败",
 			zap.String("subject", subject),
-			zap.Error(err),
+			zap.Error(errPub),
 		)
-		return err
+		return errPub
 	}
-	
+
 	eb.logger.Debug("事件发布成功",
 		zap.String("subject", subject),
 		zap.Int("size", len(payload)),
 	)
-	
+
 	return nil
 }
 
@@ -139,27 +157,27 @@ func (eb *EventBus) PublishWithPriority(subject string, data interface{}, priori
 	if err != nil {
 		return fmt.Errorf("序列化失败: %w", err)
 	}
-	
+
 	event := &prioritizedEvent{
 		subject:   subject,
 		data:      payload,
 		priority:  priority,
 		timestamp: time.Now(),
 	}
-	
+
 	eb.queueMu.Lock()
 	heap.Push(eb.priQueue, event)
 	eb.queueMu.Unlock()
-	
+
 	eb.logger.Debug("优先级事件入队",
 		zap.String("subject", subject),
 		zap.Int("priority", int(priority)),
 		zap.Int("queue_size", eb.priQueue.Len()),
 	)
-	
+
 	// 异步处理优先级队列
 	go eb.processPriorityQueue()
-	
+
 	return nil
 }
 
@@ -167,11 +185,14 @@ func (eb *EventBus) PublishWithPriority(subject string, data interface{}, priori
 func (eb *EventBus) processPriorityQueue() {
 	eb.queueMu.Lock()
 	defer eb.queueMu.Unlock()
-	
+
 	for eb.priQueue.Len() > 0 {
 		event := heap.Pop(eb.priQueue).(*prioritizedEvent)
-		
-		err := eb.conn.Publish(event.subject, event.data)
+
+		var err error
+		if eb.conn != nil {
+			err = eb.conn.Publish(event.subject, event.data)
+		}
 		if err != nil {
 			eb.logger.Error("优先级事件发布失败",
 				zap.String("subject", event.subject),
@@ -192,16 +213,16 @@ func (eb *EventBus) Subscribe(subject string, handler func(msg *nats.Msg)) error
 				)
 			}
 		}()
-		
+
 		handler(msg)
 	})
-	
+
 	if err != nil {
 		return fmt.Errorf("订阅失败: %w", err)
 	}
-	
+
 	eb.logger.Info("订阅成功", zap.String("subject", subject))
-	
+
 	return nil
 }
 
@@ -217,19 +238,19 @@ func (eb *EventBus) QueueSubscribe(subject, queue string, handler func(msg *nats
 				)
 			}
 		}()
-		
+
 		handler(msg)
 	})
-	
+
 	if err != nil {
 		return fmt.Errorf("队列订阅失败: %w", err)
 	}
-	
+
 	eb.logger.Info("队列订阅成功",
 		zap.String("subject", subject),
 		zap.String("queue", queue),
 	)
-	
+
 	return nil
 }
 
@@ -239,12 +260,15 @@ func (eb *EventBus) Request(subject string, data interface{}, timeout time.Durat
 	if err != nil {
 		return nil, fmt.Errorf("序列化失败: %w", err)
 	}
-	
-	msg, err := eb.conn.Request(subject, payload, timeout)
+
+	var msg *nats.Msg
+	if eb.conn != nil {
+		msg, err = eb.conn.Request(subject, payload, timeout)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("请求失败: %w", err)
 	}
-	
+
 	return msg, nil
 }
 
@@ -266,7 +290,7 @@ func (eb *EventBus) PublishCrossService(targetService, eventType string, payload
 		Payload:      payload,
 		Timestamp:     time.Now(),
 	}
-	
+
 	subject := fmt.Sprintf("cross.%s.%s", targetService, eventType)
 	return eb.Publish(subject, event)
 }
@@ -281,6 +305,18 @@ func (eb *EventBus) SubscribeCrossService(targetService, eventType string, handl
 func (eb *EventBus) Close() {
 	eb.conn.Close()
 	eb.logger.Info("EventBus连接关闭")
+}
+
+// RawConn 返回底层 *nats.Conn（用于订阅管理等高级操作）。
+// 仅当 EventBus 由 NewEventBusWithClient 创建时可用。
+func (eb *EventBus) RawConn() *nats.Conn {
+	if client, ok := eb.conn.(interface{ Raw() *nats.Conn }); ok {
+		return client.Raw()
+	}
+	if nc, ok := eb.conn.(*nats.Conn); ok {
+		return nc
+	}
+	return nil
 }
 
 // ========== 预定义主题 ==========

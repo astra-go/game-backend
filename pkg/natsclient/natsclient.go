@@ -29,6 +29,10 @@ type Client interface {
 	QueueSubscribe(subject, queue string, cb nats.MsgHandler) (*nats.Subscription, error)
 	// Close closes the NATS connection.
 	Close()
+	// Raw returns the underlying *nats.Conn for advanced usage.
+	// Prefer Client methods when possible; Raw is for subscription management
+	// and low-level operations not covered by the interface.
+	Raw() *nats.Conn
 }
 
 // natsClient is the production implementation backed by astra mq/nats.
@@ -82,6 +86,12 @@ func (c *natsClient) Close() {
 }
 
 // ─── astra Producer accessor ─────────────────────────────────────────────────
+
+// Raw returns the underlying *nats.Conn for advanced usage.
+// Use with caution — prefer Client methods when possible.
+func (c *natsClient) Raw() *nats.Conn {
+	return c.conn
+}
 
 // Producer returns the underlying astra mq.Producer for advanced usage.
 func (c *natsClient) Producer() *astranats.Producer {
