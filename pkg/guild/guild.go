@@ -9,7 +9,7 @@ import (
 
 	"github.com/astra-go/game-backend/internal/models"
 	lru "github.com/hashicorp/golang-lru/v2"
-	"github.com/nats-io/nats.go"
+	"github.com/astra-go/game-backend/pkg/natsclient"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -89,7 +89,7 @@ type GuildService interface {
 type GuildComponent struct {
 	db         *gorm.DB
 	redis      *redis.Client
-	nc         *nats.Conn
+	nc         natsclient.Client
 	logger     *zap.Logger
 	localCache *lru.Cache[uint64, *models.Guild]
 	mu         sync.RWMutex
@@ -97,7 +97,7 @@ type GuildComponent struct {
 }
 
 // NewGuildComponent 创建公会组件
-func NewGuildComponent(db *gorm.DB, redis *redis.Client, nc *nats.Conn, logger *zap.Logger) *GuildComponent {
+func NewGuildComponent(db *gorm.DB, redis *redis.Client, nc natsclient.Client, logger *zap.Logger) *GuildComponent {
 	localCache, _ := lru.New[uint64, *models.Guild](localCacheSize)
 
 	return &GuildComponent{

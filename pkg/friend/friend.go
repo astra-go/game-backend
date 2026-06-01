@@ -9,7 +9,7 @@ import (
 
 	"github.com/astra-go/game-backend/pkg/common"
 	lru "github.com/hashicorp/golang-lru/v2"
-	"github.com/nats-io/nats.go"
+	"github.com/astra-go/game-backend/pkg/natsclient"
 	"github.com/redis/go-redis/v9"
 	"github.com/willf/bloom"
 	"go.uber.org/zap"
@@ -29,11 +29,11 @@ const (
 	bloomFilterHashCount = 5
 )
 
-// FriendComponent 好友服务组件（方案C：高阶优化）
+// FriendComponent 好友服务组件
 type FriendComponent struct {
 	db              *gorm.DB
 	redis           *redis.Client
-	nc              *nats.Conn
+	nc              natsclient.Client
 	logger          *zap.Logger
 	localCache      *lru.Cache[string, []common.FriendInfo]
 	bloomFilter     *bloom.BloomFilter
@@ -47,7 +47,7 @@ type asyncWriteTask struct {
 }
 
 // NewFriendComponent 创建好友组件
-func NewFriendComponent(db *gorm.DB, redis *redis.Client, nc *nats.Conn, logger *zap.Logger) *FriendComponent {
+func NewFriendComponent(db *gorm.DB, redis *redis.Client, nc natsclient.Client, logger *zap.Logger) *FriendComponent {
 	localCache, _ := lru.New[string, []common.FriendInfo](localCacheSize)
 
 	return &FriendComponent{

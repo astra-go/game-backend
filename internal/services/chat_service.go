@@ -10,7 +10,7 @@ import (
 	"github.com/astra-go/game-backend/internal/models"
 	"github.com/astra-go/game-backend/pkg/chat"
 	"github.com/go-redis/redis/v8"
-	"github.com/nats-io/nats.go"
+	"github.com/astra-go/game-backend/pkg/natsclient"
 	"gorm.io/gorm"
 )
 
@@ -30,12 +30,12 @@ const (
 type ChatService struct {
 	db             *gorm.DB
 	redis          *redis.Client
-	nats           *nats.Conn
+	nats           natsclient.Client
 	messageFilter  *chat.MessageFilter
 }
 
 // NewChatService creates a new chat service
-func NewChatService(db *gorm.DB, redisClient *redis.Client, natsConn *nats.Conn) *ChatService {
+func NewChatService(db *gorm.DB, redisClient *redis.Client, natsConn natsclient.Client) *ChatService {
 	return &ChatService{
 		db:             db,
 		redis:          redisClient,
