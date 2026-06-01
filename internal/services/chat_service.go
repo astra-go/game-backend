@@ -42,6 +42,11 @@ func NewChatService(db *gorm.DB, redis *redis.Client, nats *nats.Conn) *ChatServ
 	}
 }
 
+// DB returns the database connection
+func (s *ChatService) DB() *gorm.DB {
+	return s.db
+}
+
 // ChatMessageDTO represents a chat message for transmission
 type ChatMessageDTO struct {
 	ID         uint64                `json:"id"`
