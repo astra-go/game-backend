@@ -1,25 +1,14 @@
 module github.com/astra-go/game-backend
 
-go 1.25.10
-
-// 使用本地开发的 astra 框架
-replace github.com/astra-go/astra => ../astra
-
-replace github.com/astra-go/astra/testutil => ../astra/testutil
-
-replace github.com/astra-go/astra/cache => ../astra/cache
-
-replace github.com/astra-go/astra/config => ../astra/config
-
-replace github.com/astra-go/astra/mq => ../astra/mq
+go 1.25.8
 
 require (
 	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/astra-go/astra v1.0.5
-	github.com/astra-go/astra/config v0.0.0-00010101000000-000000000000
-	github.com/astra-go/astra/mq v0.0.0-00010101000000-000000000000
+	github.com/astra-go/astra/config v1.0.5
+	github.com/astra-go/astra/mq v1.0.5
 	github.com/astra-go/astra/testutil v1.0.5
-	github.com/bits-and-blooms/bloom/v3 v3.7.0
+	github.com/bits-and-blooms/bloom/v3 v3.7.1
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/gorilla/websocket v1.5.3
@@ -69,7 +58,7 @@ require (
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/astra-go/astra/cache v1.0.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bits-and-blooms/bitset v1.12.0 // indirect
+	github.com/bits-and-blooms/bitset v1.24.2 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.1 // indirect
@@ -202,4 +191,12 @@ require (
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.2 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
+)
+
+replace (
+	github.com/astra-go/astra v1.0.4 => ../astra
+	github.com/astra-go/astra/cache => ../astra/cache
+	github.com/astra-go/astra/config => ../astra/config
+	github.com/astra-go/astra/mq => ../astra/mq
+	github.com/astra-go/astra/testutil => ../astra/testutil
 )

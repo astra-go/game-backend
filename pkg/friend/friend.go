@@ -7,16 +7,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/astra-go/game-backend/pkg/common"
-	lru "github.com/hashicorp/golang-lru/v2"
-	"github.com/astra-go/game-backend/pkg/natsclient"
-	"github.com/redis/go-redis/v9"
-	bloom "github.com/bits-and-blooms/bloom/v3"
 	"github.com/astra-go/astra/log"
+	"github.com/astra-go/game-backend/pkg/common"
+	"github.com/astra-go/game-backend/pkg/natsclient"
+	bloom "github.com/bits-and-blooms/bloom/v3"
+	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
-var ctx = context.Background()
+// ctx 删除全局 context，改为方法参数传递
 
 const (
 	defaultFriendLimit   = 500
@@ -39,6 +39,8 @@ type FriendComponent struct {
 	bloomFilter     *bloom.BloomFilter
 	asyncWriteQueue chan *asyncWriteTask
 	mu              sync.RWMutex
+	quitCh          chan struct{}  // 退出信号
+	wg              sync.WaitGroup // 等待 goroutine 退出
 }
 
 type asyncWriteTask struct {
@@ -58,6 +60,7 @@ func NewFriendComponent(db *gorm.DB, redis *redis.Client, nc natsclient.Client, 
 		localCache:      localCache,
 		bloomFilter:     bloom.New(bloomFilterSize, bloomFilterHashCount),
 		asyncWriteQueue: make(chan *asyncWriteTask, asyncWriteQueueSize),
+		quitCh:          make(chan struct{}),
 	}
 }
 
@@ -79,11 +82,36 @@ func (f *FriendComponent) Init() error {
 	}
 
 	// 启动异步写入协程
+	f.wg.Add(1)
 	go f.asyncWriteToMySQL()
 
 	f.logger.Info("FriendComponent 初始化完成",
 		"bloom_filter_players", len(players),
 	)
+
+	return nil
+}
+
+// Close 关闭组件（优雅退出）
+func (f *FriendComponent) Close() error {
+	f.logger.Info("FriendComponent 开始关闭...")
+
+	// 通知 goroutine 退出
+	close(f.quitCh)
+
+	// 等待所有 goroutine 退出（最多等待 10 秒）
+	done := make(chan struct{})
+	go func() {
+		f.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		f.logger.Info("FriendComponent 所有 goroutine 已退出")
+	case <-time.After(10 * time.Second):
+		f.logger.Warn("FriendComponent 等待 goroutine 退出超时")
+	}
 
 	return nil
 }
@@ -101,14 +129,15 @@ func (f *FriendComponent) SendRequest(playerID, targetID, message string) error 
 
 	// 获取分布式锁（防止并发重复请求）
 	lockKey := f.getRequestLockKey(playerID, targetID)
-	locked, err := f.acquireLock(lockKey, distributedLockTTL)
+	ctx := context.Background()
+	locked, err := f.acquireLock(ctx, lockKey, distributedLockTTL)
 	if err != nil {
 		return fmt.Errorf("获取锁失败: %w", err)
 	}
 	if !locked {
 		return errors.New("请求处理中，请稍后重试")
 	}
-	defer f.releaseLock(lockKey)
+	defer f.releaseLock(ctx, lockKey)
 
 	// 检查是否已经是好友
 	var existingFriend common.Friend
@@ -218,8 +247,8 @@ func (f *FriendComponent) AcceptRequest(requestID, targetID string) error {
 	}
 
 	// 清除双方的好友列表缓存
-	f.invalidateCache(request.PlayerID)
-	f.invalidateCache(request.TargetID)
+	f.invalidateCache(context.Background(), request.PlayerID)
+	f.invalidateCache(context.Background(), request.TargetID)
 
 	f.logger.Info("好友请求已接受",
 		"request_id", requestID,
@@ -285,8 +314,8 @@ func (f *FriendComponent) DeleteFriend(playerID, friendID string) error {
 	}
 
 	// 清除双方的好友列表缓存
-	f.invalidateCache(playerID)
-	f.invalidateCache(friendID)
+	f.invalidateCache(context.Background(), playerID)
+	f.invalidateCache(context.Background(), friendID)
 
 	f.logger.Info("好友已删除",
 		"player_id", playerID,
@@ -301,7 +330,7 @@ func (f *FriendComponent) DeleteFriend(playerID, friendID string) error {
 }
 
 // GetFriendList 获取好友列表（两层缓存：本地LRU → Redis → MySQL）
-func (f *FriendComponent) GetFriendList(playerID string) ([]common.FriendInfo, error) {
+func (f *FriendComponent) GetFriendList(ctx context.Context, playerID string) ([]common.FriendInfo, error) {
 	// 1. 本地LRU缓存查询
 	if cached, ok := f.localCache.Get(playerID); ok {
 		f.logger.Debug("好友列表命中本地缓存", "player_id", playerID)
@@ -346,7 +375,7 @@ func (f *FriendComponent) GetFriendList(playerID string) ([]common.FriendInfo, e
 	}
 
 	// 批量查询在线状态
-	onlineStatus, _ := f.batchIsOnline(friendIDs)
+	onlineStatus, _ := f.batchIsOnline(ctx, friendIDs)
 
 	// 组装FriendInfo
 	for _, player := range players {
@@ -396,7 +425,7 @@ func (f *FriendComponent) GetPendingRequests(playerID string) ([]common.FriendRe
 // NotifyFriendsOnline 通知好友玩家上线
 func (f *FriendComponent) NotifyFriendsOnline(playerID string) {
 	// 获取好友列表
-	friends, err := f.GetFriendList(playerID)
+	friends, err := f.GetFriendList(context.Background(), playerID)
 	if err != nil {
 		f.logger.Warn("获取好友列表失败", "error", err)
 		return
@@ -423,7 +452,7 @@ func (f *FriendComponent) NotifyFriendsOnline(playerID string) {
 // NotifyFriendsOffline 通知好友玩家下线
 func (f *FriendComponent) NotifyFriendsOffline(playerID string) {
 	// 获取好友列表
-	friends, err := f.GetFriendList(playerID)
+	friends, err := f.GetFriendList(context.Background(), playerID)
 	if err != nil {
 		f.logger.Warn("获取好友列表失败", "error", err)
 		return
@@ -448,7 +477,7 @@ func (f *FriendComponent) NotifyFriendsOffline(playerID string) {
 }
 
 // batchIsOnline 批量查询在线状态（Redis MGET）
-func (f *FriendComponent) batchIsOnline(playerIDs []string) (map[string]bool, error) {
+func (f *FriendComponent) batchIsOnline(ctx context.Context, playerIDs []string) (map[string]bool, error) {
 	if len(playerIDs) == 0 {
 		return map[string]bool{}, nil
 	}
@@ -461,6 +490,7 @@ func (f *FriendComponent) batchIsOnline(playerIDs []string) (map[string]bool, er
 
 	// 使用Pipeline批量查询
 	pipe := f.redis.Pipeline()
+
 	cmds := make([]*redis.StringCmd, len(keys))
 	for i, key := range keys {
 		cmds[i] = pipe.Get(ctx, key)
@@ -478,7 +508,7 @@ func (f *FriendComponent) batchIsOnline(playerIDs []string) (map[string]bool, er
 }
 
 // invalidateCache 清除缓存
-func (f *FriendComponent) invalidateCache(playerID string) {
+func (f *FriendComponent) invalidateCache(ctx context.Context, playerID string) {
 	// 清除本地缓存
 	f.localCache.Remove(playerID)
 
@@ -489,22 +519,44 @@ func (f *FriendComponent) invalidateCache(playerID string) {
 
 // asyncWriteToMySQL 异步写入MySQL（从缓冲队列消费）
 func (f *FriendComponent) asyncWriteToMySQL() {
-	for task := range f.asyncWriteQueue {
-		switch task.taskType {
-		case "create_friend":
-			if friend, ok := task.data.(*common.Friend); ok {
-				if err := f.db.Create(friend).Error; err != nil {
-					f.logger.Error("异步写入好友关系失败", "error", err)
+	defer f.wg.Done()
+
+	for {
+		select {
+		case task := <-f.asyncWriteQueue:
+			switch task.taskType {
+			case "create_friend":
+				if friend, ok := task.data.(*common.Friend); ok {
+					if err := f.db.Create(friend).Error; err != nil {
+						f.logger.Error("异步写入好友关系失败", "error", err)
+					}
+				}
+			case "delete_friend":
+				if data, ok := task.data.(map[string]string); ok {
+					playerID := data["player_id"]
+					friendID := data["friend_id"]
+					if err := f.db.Where("player_id = ? AND friend_id = ?", playerID, friendID).Delete(&common.Friend{}).Error; err != nil {
+						f.logger.Error("异步删除好友关系失败", "error", err)
+					}
 				}
 			}
-		case "delete_friend":
-			if data, ok := task.data.(map[string]string); ok {
-				playerID := data["player_id"]
-				friendID := data["friend_id"]
-				if err := f.db.Where("player_id = ? AND friend_id = ?", playerID, friendID).Delete(&common.Friend{}).Error; err != nil {
-					f.logger.Error("异步删除好友关系失败", "error", err)
+		case <-f.quitCh:
+			// 排空队列后退出
+			for len(f.asyncWriteQueue) > 0 {
+				task := <-f.asyncWriteQueue
+				switch task.taskType {
+				case "create_friend":
+					if friend, ok := task.data.(*common.Friend); ok {
+						f.db.Create(friend)
+					}
+				case "delete_friend":
+					if data, ok := task.data.(map[string]string); ok {
+						f.db.Where("player_id = ? AND friend_id = ?", data["player_id"], data["friend_id"]).Delete(&common.Friend{})
+					}
 				}
 			}
+			f.logger.Info("asyncWriteToMySQL goroutine 已退出")
+			return
 		}
 	}
 }
@@ -527,11 +579,11 @@ func (f *FriendComponent) getFriendListCacheKey(playerID string) string {
 	return fmt.Sprintf("friend_list:%s", playerID)
 }
 
-func (f *FriendComponent) acquireLock(key string, ttl time.Duration) (bool, error) {
+func (f *FriendComponent) acquireLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	return f.redis.SetNX(ctx, key, "1", ttl).Result()
 }
 
-func (f *FriendComponent) releaseLock(key string) {
+func (f *FriendComponent) releaseLock(ctx context.Context, key string) {
 	f.redis.Del(ctx, key)
 }
 

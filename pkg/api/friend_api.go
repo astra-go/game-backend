@@ -148,7 +148,7 @@ func (api *FriendAPI) DeleteFriend(c *astra.Ctx) error {
 func (api *FriendAPI) GetFriendList(c *astra.Ctx) error {
 	playerID, _ := c.Get(middleware.ContextKeyPlayerID)
 
-	friends, err := api.fc.GetFriendList(playerID.(string))
+	friends, err := api.fc.GetFriendList(c.Request().Context(), playerID.(string))
 	if err != nil {
 		api.logger.Error("获取好友列表失败",
 			"player_id", playerID,
@@ -192,7 +192,7 @@ func (api *FriendAPI) GetOnlineStatus(c *astra.Ctx) error {
 	}
 
 	// 验证是否为好友关系
-	friends, err := api.fc.GetFriendList(playerID.(string))
+	friends, err := api.fc.GetFriendList(c.Request().Context(), playerID.(string))
 	if err != nil {
 		api.logger.Error("获取好友列表失败",
 			"player_id", playerID,

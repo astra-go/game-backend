@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/astra-go/game-backend/pkg/common"
 	"github.com/astra-go/astra"
+	"github.com/astra-go/game-backend/pkg/common"
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -55,6 +55,8 @@ type GatewayComponent struct {
 	redis       RedisClient
 	nats        NATSClient
 	config      GatewayConfig
+	quitCh      chan struct{}  // 退出信号
+	wg          sync.WaitGroup // 等待 goroutine 退出
 }
 
 // GatewayConfig 网关配置
@@ -105,6 +107,7 @@ func NewGatewayComponent(redis RedisClient, nats NATSClient, cfg GatewayConfig, 
 		config: cfg,
 		nodeID: nodeID,
 		app:    astra.New(),
+		quitCh: make(chan struct{}),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  cfg.ReadBufferSize,
 			WriteBufferSize: cfg.WriteBufferSize,
@@ -142,7 +145,77 @@ func (g *GatewayComponent) Init() error {
 		// 订阅跨节点转发消息
 		g.nats.Subscribe(fmt.Sprintf("gateway.%s.forward", g.nodeID), g.router.HandleForwardedMessage)
 	}
+
+	// 启动连接超时清理协程
+	g.wg.Add(1)
+	go g.cleanupStaleConnections()
+
 	return nil
+}
+
+// Close 关闭组件（优雅退出）
+func (g *GatewayComponent) Close() error {
+	slog.Info("GatewayComponent 开始关闭...")
+
+	// 通知 goroutine 退出
+	close(g.quitCh)
+
+	// 等待所有 goroutine 退出（最多等待 10 秒）
+	done := make(chan struct{})
+	go func() {
+		g.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		slog.Info("GatewayComponent 所有 goroutine 已退出")
+	case <-time.After(10 * time.Second):
+		slog.Warn("GatewayComponent 等待 goroutine 退出超时")
+	}
+
+	// 关闭所有 WebSocket 连接
+	g.connections.Range(func(key, value interface{}) bool {
+		wsc := value.(*WSConnection)
+		g.closeConnection(wsc)
+		return true
+	})
+
+	// 关闭 NATS
+	if g.nats != nil {
+		g.nats.Close()
+	}
+
+	return nil
+}
+
+// cleanupStaleConnections 定期清理超时连接
+func (g *GatewayComponent) cleanupStaleConnections() {
+	defer g.wg.Done()
+
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now()
+			g.connections.Range(func(key, value interface{}) bool {
+				wsc := value.(*WSConnection)
+				wsc.mu.Lock()
+				if now.Sub(wsc.lastPong) > 3*time.Minute {
+					wsc.mu.Unlock()
+					g.closeConnection(wsc)
+				} else {
+					wsc.mu.Unlock()
+				}
+				return true
+			})
+		case <-g.quitCh:
+			slog.Info("cleanupStaleConnections goroutine 已退出")
+			return
+		}
+	}
 }
 
 // Run 启动网关服务
