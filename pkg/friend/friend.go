@@ -11,7 +11,7 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/astra-go/game-backend/pkg/natsclient"
 	"github.com/redis/go-redis/v9"
-	"github.com/willf/bloom"
+	bloom "github.com/bits-and-blooms/bloom/v3"
 	"github.com/astra-go/astra/log"
 	"gorm.io/gorm"
 )

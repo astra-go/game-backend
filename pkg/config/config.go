@@ -9,14 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nacos-group/nacos-sdk-go/v2/clients"
-	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
-	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
-	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 	"gopkg.in/yaml.v3"
 
 	"github.com/astra-go/astra/config"
-	confignacos "github.com/astra-go/astra/config/nacos"
 )
 
 const (
@@ -135,19 +130,22 @@ func loadWithAstra(nacosConfigPath string) (*Config, error) {
 		return nil, fmt.Errorf("读取Nacos配置失败: %w", err)
 	}
 
-	// 创建 Nacos 客户端
-	client, err := createNacosClient(nacosCfg)
+	// 使用 astra config 的 NacosSource
+	nacosSrc, err := config.NewNacosSource(config.NacosSourceConfig{
+		ServerAddr: nacosCfg.ServerAddr,
+		Namespace:  nacosCfg.Namespace,
+		Group:      nacosCfg.Group,
+		DataID:     nacosCfg.DataID,
+		Format:     config.YAMLFormat,
+		Username:   nacosCfg.Username,
+		Password:   nacosCfg.Password,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("创建Nacos客户端失败: %w", err)
+		return nil, fmt.Errorf("创建Nacos源失败: %w", err)
 	}
 
-	// 构建 astra config 源
+	// 使用本地配置作为 fallback
 	localSrc := &localConfigSource{path: findLocalConfigPath()}
-	nacosSrc := confignacos.New(client, confignacos.Config{
-		DataID: nacosCfg.DataID,
-		Group:  nacosCfg.Group,
-		Format: config.YAMLFormat,
-	})
 
 	// 使用 astra 配置系统加载
 	astraCfg, err := config.New(localSrc, nacosSrc)
@@ -252,29 +250,6 @@ type NacosConnectionConfig struct {
 	DataID     string `yaml:"data_id"`
 	Username   string `yaml:"username"`
 	Password   string `yaml:"password"`
-}
-
-// createNacosClient 创建Nacos客户端
-func createNacosClient(cfg *NacosConnectionConfig) (config_client.IConfigClient, error) {
-	serverConfig := []constant.ServerConfig{
-		*constant.NewServerConfig(cfg.ServerAddr, 8848),
-	}
-
-	clientConfig := *constant.NewClientConfig(
-		constant.WithNamespaceId(cfg.Namespace),
-		constant.WithUsername(cfg.Username),
-		constant.WithPassword(cfg.Password),
-		constant.WithTimeoutMs(5000),
-		constant.WithNotLoadCacheAtStart(true),
-		constant.WithLogDir("/tmp/nacos/log"),
-		constant.WithCacheDir("/tmp/nacos/cache"),
-		constant.WithLogLevel("info"),
-	)
-
-	return clients.NewConfigClient(vo.NacosClientParam{
-		ClientConfig:  &clientConfig,
-		ServerConfigs: serverConfig,
-	})
 }
 
 // loadFromLocal 从本地配置文件加载（降级方案）

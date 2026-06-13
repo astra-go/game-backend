@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/astra-go/astra/mq"
-	astranats "github.com/astra-go/astra/mq/nats"
 	"github.com/nats-io/nats.go"
 )
 
@@ -35,16 +34,16 @@ type Client interface {
 	Raw() *nats.Conn
 }
 
-// natsClient is the production implementation backed by astra mq/nats.
+// natsClient is the production implementation backed by astra mq.
 type natsClient struct {
-	producer *astranats.Producer // astra nats.Producer (satisfies mq.Producer)
-	conn     *nats.Conn          // raw conn for Request (nats.Producer wraps this)
+	producer *mq.NATSProducer // astra NATSProducer (satisfies mq.Producer)
+	conn     *nats.Conn      // raw conn for Request (nats.Producer wraps this)
 }
 
 // New creates a new NATS client connected to the given URL.
 func New(url string) (Client, error) {
-	cfg := astranats.Config{URL: url}
-	producer, err := astranats.NewProducer(cfg)
+	cfg := mq.NATSConfig{URL: url}
+	producer, err := mq.NewNATSProducer(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("natsclient: create producer: %w", err)
 	}
@@ -94,6 +93,6 @@ func (c *natsClient) Raw() *nats.Conn {
 }
 
 // Producer returns the underlying astra mq.Producer for advanced usage.
-func (c *natsClient) Producer() *astranats.Producer {
+func (c *natsClient) Producer() *mq.NATSProducer {
 	return c.producer
 }
